@@ -1,0 +1,596 @@
+{
+ "checks": [
+  {
+   "rule_id": "1008.1.1",
+   "status": "fail",
+   "found": "75 სმ",
+   "explanation_ka": "კიბე 1-ის კარი 75 სმ-ია, საჭიროა არანაკლებ 82 სმ თავისუფალი სიგანე.",
+   "explanation_en": "The door to stair 1 is 75 cm; at least 82 cm clear width is required.",
+   "fix_ka": "კარი შეცვალეთ ისეთით, რომლის თავისუფალი სიგანეა ≥ 82 სმ.",
+   "fix_en": "Use a door with a clear width of at least 82 cm.",
+   "page": null,
+   "anchors": [
+    40
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1009.4",
+   "status": "fail",
+   "found": "1,00 მ",
+   "explanation_ka": "კიბე 2-ის სიგანე 1,00 მ-ია, მინიმუმი 1,1 მ.",
+   "explanation_en": "Stair 2 is 1.00 m wide; the minimum is 1.1 m.",
+   "fix_ka": "კიბის თავისუფალი სიგანე გაზარდეთ 1,1 მ-მდე მაინც.",
+   "fix_en": "Widen the stair to at least 1.1 m clear.",
+   "page": null,
+   "anchors": [
+    38
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1018.2",
+   "status": "fail",
+   "found": "1,10 მ",
+   "explanation_ka": "საერთო დერეფანი 1,10 მ-ია. სც-2 მრავალბინიანი სახლის საერთო დერეფანზე 90 სმ-იანი შეღავათი არ ვრცელდება, მინიმუმია 1,2 მ.",
+   "explanation_en": "The common corridor is 1.10 m. The 90 cm allowance does not cover common corridors of სც-2 apartment buildings, so the minimum is 1.2 m.",
+   "fix_ka": "დერეფანი გააფართოვეთ 1,2 მ-მდე.",
+   "fix_en": "Widen the corridor to 1.2 m.",
+   "page": null,
+   "anchors": [
+    45
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1018.4",
+   "status": "fail",
+   "found": "9,40 მ",
+   "explanation_ka": "დასავლეთის ჩიხი 9,40 მ-ია. შენობა არ არის დაშხეფებული, ლიმიტი 6,0 მ.",
+   "explanation_en": "The west dead end is 9.40 m. The building has no sprinklers, so the limit is 6.0 m.",
+   "fix_ka": "შეამცირეთ ჩიხი 6,0 მ-მდე, ან დაამატეთ გასასვლელი.",
+   "fix_en": "Shorten the dead end to 6.0 m or add an exit.",
+   "page": null,
+   "anchors": [
+    42
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "403.5.1",
+   "status": "fail",
+   "found": "8,00 მ",
+   "explanation_ka": "შენობა მაღლივია (+24,00). კიბეებს შორის 8,00 მ-ია, საჭიროა 9,0 მ ან დიაგონალის მეოთხედი (რომელიც ნაკლებია).",
+   "explanation_en": "The building is high-rise (+24.00). The stairs are 8.00 m apart; 9.0 m or a quarter of the diagonal is required, whichever is less.",
+   "fix_ka": "კიბეები ერთმანეთს დააშორეთ სულ მცირე 9,0 მ-ით.",
+   "fix_en": "Move the stairs at least 9.0 m apart.",
+   "page": null,
+   "anchors": [
+    44
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1010.3",
+   "status": "fail",
+   "found": "1:10",
+   "explanation_ka": "პანდუსის დახრა 1:10-ია, მაქსიმუმი 1:12.",
+   "explanation_en": "The ramp slope is 1:10; the maximum is 1:12.",
+   "fix_ka": "პანდუსი დააგრძელეთ: h=0,45 მ-ზე საჭიროა სულ მცირე 5,4 მ სიგრძე.",
+   "fix_en": "Lengthen the ramp: a 0.45 m rise needs at least 5.4 m.",
+   "page": null,
+   "anchors": [
+    15
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1105.1",
+   "status": "fail",
+   "found": "1 / 2 (50%)",
+   "explanation_ka": "ორი მთავარი შესასვლელიდან მისაწვდომია ერთი, საჭიროა 60%.",
+   "explanation_en": "One of two main entrances is accessible; 60% is required.",
+   "fix_ka": "მთავარ შესასვლელ 2-ს დაუმატეთ პანდუსი.",
+   "fix_en": "Add a ramp to main entrance 2.",
+   "page": null,
+   "anchors": [
+    13
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1022.2",
+   "status": "fail",
+   "found": "1 სთ",
+   "explanation_ka": "კიბე აერთებს 4-ზე მეტ სართულს, ამიტომ საჭიროა 2 სთ. ჩანაწერში 1 სთ-ია.",
+   "explanation_en": "The stair connects more than 4 storeys, so 2 h is required. The note says 1 h.",
+   "fix_ka": "კიბის უჯრედის კედლებისთვის მიუთითეთ 2 სთ ცეცხლმედეგობა.",
+   "fix_en": "Specify 2 h for the stair enclosure walls.",
+   "page": null,
+   "anchors": [
+    78
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1003.2",
+   "status": "fail",
+   "found": "2,20 მ",
+   "explanation_ka": "სარდაფის დერეფნის ჭერი 2,20 მ-ია, მინიმუმი 2,3 მ.",
+   "explanation_en": "The basement corridor ceiling is 2.20 m; the minimum is 2.3 m.",
+   "fix_ka": "გაზარდეთ სიმაღლე 2,3 მ-მდე.",
+   "fix_en": "Raise the ceiling to at least 2.3 m.",
+   "page": null,
+   "anchors": [
+    67
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1208.3",
+   "status": "fail",
+   "found": "6,2 მ²",
+   "explanation_ka": "ბინა 2-ის საძინებელი 6,2 მ²-ია, სხვა საცხოვრებელი ოთახის მინიმუმი 7,0 მ².",
+   "explanation_en": "The bedroom in apartment 2 is 6.2 m²; the minimum for other habitable rooms is 7.0 m².",
+   "fix_ka": "ოთახის ფართობი გაზარდეთ 7,0 მ²-მდე.",
+   "fix_en": "Enlarge the room to at least 7.0 m².",
+   "page": null,
+   "anchors": [
+    26
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "403.4.5",
+   "status": "missing",
+   "found": "",
+   "explanation_ka": "შენობა მაღლივია, მაგრამ ხანძრის საკონტროლო ცენტრი გეგმაზე არ ჩანს.",
+   "explanation_en": "The building is high-rise, but no fire command centre appears on the plans.",
+   "fix_ka": "დაამატეთ ოთახი და ადგილი შეათანხმეთ სახანძრო დანაყოფთან.",
+   "fix_en": "Add the room and agree its location with the fire service.",
+   "page": 1,
+   "anchors": [],
+   "box": null
+  },
+  {
+   "rule_id": "1106.1",
+   "status": "missing",
+   "found": "6 ადგილი",
+   "explanation_ka": "ავტოსადგომზე მისაწვდომი ადგილი მონიშნული არ არის.",
+   "explanation_en": "No accessible space is marked in the car park.",
+   "fix_ka": "მონიშნეთ სულ მცირე ერთი მისაწვდომი ადგილი.",
+   "fix_en": "Mark at least one accessible space.",
+   "page": null,
+   "anchors": [
+    16
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1107.6.2.1.1",
+   "status": "missing",
+   "found": "48 ბინა",
+   "explanation_ka": "შენობაში 48 ბინაა, საჭიროა სულ მცირე 2% ა ტიპის ერთეული. გეგმაზე არცერთი არ არის მონიშნული.",
+   "explanation_en": "There are 48 apartments, so at least 2% Type A units are required. None is marked.",
+   "fix_ka": "მონიშნეთ სულ მცირე 1 ა ტიპის ერთეული.",
+   "fix_en": "Mark at least 1 Type A unit.",
+   "page": null,
+   "anchors": [
+    50
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1011.1",
+   "status": "verify",
+   "found": "",
+   "explanation_ka": "გასასვლელის ნიშნები ამ ფურცლებზე არ ჩანს. შესაძლოა ელექტროობის ნახაზებზეა.",
+   "explanation_en": "Exit signs do not appear on these sheets. They may be on the electrical sheets.",
+   "fix_ka": "დაამატეთ ელექტროობის ან ევაკუაციის ნახაზი.",
+   "fix_en": "Add the electrical or evacuation sheet.",
+   "page": null,
+   "anchors": [],
+   "box": null
+  },
+  {
+   "rule_id": "907.2.9.1",
+   "status": "verify",
+   "found": "48 ბინა",
+   "explanation_ka": "საჭიროა განგაშის სისტემა (16-ზე მეტი ერთეული), მაგრამ ამ ფურცლებზე არ ჩანს.",
+   "explanation_en": "A fire alarm is required (more than 16 units), but it does not appear on these sheets.",
+   "fix_ka": "დაამატეთ სუსტი დენების ნახაზი.",
+   "fix_en": "Add the low-voltage sheet.",
+   "page": null,
+   "anchors": [],
+   "box": null
+  },
+  {
+   "rule_id": "1027.1",
+   "status": "verify",
+   "found": "",
+   "explanation_ka": "კიბე 2 ფოიეში გადის. ეს დასაშვებია მხოლოდ 1027.1-ის გამონაკლისების პირობებში.",
+   "explanation_en": "Stair 2 discharges into the lobby. That is allowed only under the exceptions of 1027.1.",
+   "fix_ka": "შეამოწმეთ გამონაკლისის პირობები.",
+   "fix_en": "Check the conditions of the exception.",
+   "page": null,
+   "anchors": [
+    9
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1015.2.1",
+   "status": "verify",
+   "found": "8,00 მ",
+   "explanation_ka": "მაღლივში კიბეების დაშორებას 403.5.1 არეგულირებს; შედეგი იხილეთ იქ.",
+   "explanation_en": "In a high-rise, stair separation is set by 403.5.1: see that result.",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    44
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "915.12",
+   "status": "verify",
+   "found": "24,0 მ",
+   "explanation_ka": "სიმაღლე 30 მ-ს არ აღემატება, ამ პუნქტის მოთხოვნა სც-2-ზე არ უნდა გავრცელდეს, მაგრამ გენგეგმა ფაილში არ არის. 915-ე ქვეთავი 2027 წლის 1 მარტამდე შეჩერებულია სახელმწიფო სახანძრო ზედამხედველობის გარეშე ობიექტებისთვის.",
+   "explanation_en": "The height is under 30 m, so this should not apply to სც-2, but there is no site plan in the file. Section 915 is suspended until 1 March 2027 for objects outside state fire supervision.",
+   "fix_ka": "დაამატეთ გენგეგმა.",
+   "fix_en": "Add the site plan.",
+   "page": null,
+   "anchors": [
+    80
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "Art. 2",
+   "status": "pass",
+   "found": "IV კლასი",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    75
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "302.1",
+   "status": "pass",
+   "found": "სც-2",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    74
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "202",
+   "status": "pass",
+   "found": "მაღლივი, +24,00",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    69
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1004.1.2",
+   "status": "pass",
+   "found": "34 ადამიანი სართულზე",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    50
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1005.3.1",
+   "status": "pass",
+   "found": "34 × 7,6 მმ = 26 სმ",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    36
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1005.3.2",
+   "status": "pass",
+   "found": "34 × 5,1 მმ = 17 სმ",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    32
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1009.5",
+   "status": "pass",
+   "found": "2,10 მ",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    72
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1009.7.2",
+   "status": "pass",
+   "found": "17,5 / 28 სმ",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    71
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1016.2",
+   "status": "pass",
+   "found": "28,6 მ",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    46
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1021.2",
+   "status": "pass",
+   "found": "2 კიბე",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    5
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "903.2.8",
+   "status": "pass",
+   "found": "+24,00 < 37 მ",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    77
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "403.3",
+   "status": "pass",
+   "found": "+24,00 < 37 მ",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    77
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "403.4.3",
+   "status": "pass",
+   "found": "მილდგარი",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    49
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "906.1",
+   "status": "pass",
+   "found": "ცეცხლმაქრი",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    47
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1018.1",
+   "status": "pass",
+   "found": "1 სთ",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    79
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1205.2",
+   "status": "pass",
+   "found": "2,25 მ² / 21,4 მ² = 11%",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    31
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1208.1",
+   "status": "pass",
+   "found": "2,35 მ",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    27
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1208.2",
+   "status": "pass",
+   "found": "2,70 მ",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [
+    68
+   ],
+   "box": null
+  },
+  {
+   "rule_id": "1009.7.3",
+   "status": "not_applicable",
+   "found": "",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [],
+   "box": null
+  },
+  {
+   "rule_id": "1010.5",
+   "status": "not_applicable",
+   "found": "",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [],
+   "box": null
+  },
+  {
+   "rule_id": "1015.1",
+   "status": "not_applicable",
+   "found": "",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [],
+   "box": null
+  },
+  {
+   "rule_id": "1015.1.1",
+   "status": "not_applicable",
+   "found": "",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [],
+   "box": null
+  },
+  {
+   "rule_id": "1107.5.1.1",
+   "status": "not_applicable",
+   "found": "",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [],
+   "box": null
+  },
+  {
+   "rule_id": "1109.2",
+   "status": "not_applicable",
+   "found": "",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [],
+   "box": null
+  },
+  {
+   "rule_id": "1007.3",
+   "status": "not_applicable",
+   "found": "",
+   "explanation_ka": "",
+   "explanation_en": "",
+   "fix_ka": "",
+   "fix_en": "",
+   "page": null,
+   "anchors": [],
+   "box": null
+  }
+ ],
+ "building": {
+  "name": "საცხოვრებელი კორპუსი (ნიმუში)",
+  "occupancy": "სც-2",
+  "storeys": 9,
+  "top_floor_m": 24.0,
+  "high_rise": true,
+  "sprinklered": false,
+  "summary_ka": "9-სართულიანი მაღლივი მრავალბინიანი სახლი სარდაფით, 48 ბინა, ავტოსაშხეფი სისტემის გარეშე.",
+  "summary_en": "9-storey high-rise apartment building with a basement, 48 apartments, no sprinklers."
+ }
+}

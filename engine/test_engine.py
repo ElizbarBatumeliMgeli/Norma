@@ -1,0 +1,310 @@
+"""The engine end to end. Gemini is a local HTTP stand-in, so requests go through the real SDK:
+a wrong field name fails here. Google's own responses are not covered."""
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import io
+import json
+from pathlib import Path
+import tempfile
+import threading
+import time
+import unittest
+from unittest import mock
+
+from google import genai
+
+import ai
+import pdf_tools
+import regulation
+from report import assemble
+from rulebook import BY_ID, RULES
+import server
+import settings
+
+SAMPLE = Path(__file__).parent / 'demo' / 'sample.pdf'
+
+
+def text_events(text, id='i1', status='completed'):
+    return [dict(event_type='interaction.created', interaction=dict(id=id, status='in_progress')),
+            dict(event_type='step.start', index=0, step=dict(type='model_output')),
+            dict(event_type='step.delta', index=0, delta=dict(type='text', text=text)),
+            dict(event_type='step.stop', index=0),
+            dict(event_type='interaction.completed', interaction=dict(id=id, status=status))]
+
+
+def call_events(query, id='i1'):
+    return [dict(event_type='interaction.created', interaction=dict(id=id, status='in_progress')),
+            dict(event_type='step.start', index=0, step=dict(type='function_call', id='c1', name='search_regulation', arguments={})),
+            dict(event_type='step.delta', index=0, delta=dict(type='arguments_delta', arguments=json.dumps(dict(query=query)))),
+            dict(event_type='step.stop', index=0),
+            dict(event_type='interaction.completed', interaction=dict(id=id, status='requires_action'))]
+
+
+class StandIn(BaseHTTPRequestHandler):
+    """Plays Gemini's Interactions endpoint: each reply is a list of events, or (status, body)."""
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        self.server.requests.append(body)
+        if self.server.replies[0] == 'hang':
+            self.server.replies.pop(0)
+            time.sleep(3)
+            return
+        # A failure stays in place, since the SDK retries some of them.
+        reply = self.server.replies[0] if isinstance(self.server.replies[0], tuple) and len(self.server.replies) == 1 else self.server.replies.pop(0)
+        if isinstance(reply, tuple):
+            data = json.dumps(reply[1]).encode()
+            self.send_response(reply[0])
+            self.send_header('Content-Type', 'application/json')
+        else:
+            data = ''.join(f'data: {json.dumps(event, ensure_ascii=False)}\n\n' for event in reply).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *_):
+        pass
+
+
+class GeminiCase(unittest.TestCase):
+    def setUp(self):
+        self.gemini = ThreadingHTTPServer(('127.0.0.1', 0), StandIn)
+        self.gemini.requests, self.gemini.replies = [], []
+        threading.Thread(target=self.gemini.serve_forever, daemon=True).start()
+        self.addCleanup(self.gemini.server_close)
+        self.addCleanup(self.gemini.shutdown)
+        url = f'http://127.0.0.1:{self.gemini.server_port}'
+        make = lambda: genai.Client(api_key='test-key', http_options=dict(base_url=url, retry_options=dict(attempts=1, http_status_codes=[502, 504])))
+        for patch in (mock.patch.object(ai, 'client', make), mock.patch.object(ai, 'model_index', 0),
+                      mock.patch.object(ai, 'upload', lambda path, record: 'https://files.test/drawing')):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def folder(self):
+        folder = Path(tempfile.mkdtemp())
+        (folder / 'drawing.pdf').write_bytes(SAMPLE.read_bytes())
+        return folder
+
+
+def review(**check):
+    return dict(building=dict(name='B', occupancy='სც-2', storeys=3, top_floor_m=6.0, high_rise=False, sprinklered=None, summary_ka='ა', summary_en='a'),
+                checks=[dict(rule_id=r['id'], status='pass', found='', explanation_ka='', explanation_en='', fix_ka='', fix_en='', page=None, anchors=[], box=None)
+                        for r in RULES] if not check else [check])
+
+
+class ReportTest(unittest.TestCase):
+    sizes = [dict(number=1, width=100, height=100)]
+
+    def test_verdict_is_clear_only_if_every_rule_passed(self):
+        report = assemble(review(), [], self.sizes)
+        self.assertEqual((report['verdict'], report['counts']['pass']), ('clear', len(RULES)))
+
+    def test_a_rule_left_out_is_never_a_pass(self):
+        partial = review()
+        partial['checks'] = partial['checks'][1:]
+        report = assemble(partial, [], self.sizes)
+        self.assertEqual((report['verdict'], report['counts']['verify']), ('verify', 1))
+
+    def test_clause_and_quote_come_from_the_rulebook(self):
+        check = dict(rule_id='1009.4', status='fail', found='1,00 მ', quote='made up', anchors=[0], page=1, box=None)
+        anchors = [dict(id=0, page=1, text='x', box=[0.1, 0.2, 0.3, 0.4])]
+        found = assemble(review(**check), anchors, self.sizes)['findings'][0]
+        self.assertEqual((found['rule'], found['quote'], found['box'], found['page']), ('1009.4', BY_ID['1009.4']['quote'], [0.1, 0.2, 0.3, 0.4], 1))
+
+    def test_a_bad_location_is_dropped(self):
+        check = dict(rule_id='1009.4', status='fail', page=9, anchors=[77], box=[0.1, 0.2, 5, 0.4])
+        found = assemble(review(**check), [], self.sizes)['findings'][0]
+        self.assertEqual((found['page'], found['box']), (None, None))
+
+
+class RegulationTest(unittest.TestCase):
+    def test_the_newest_amendment_comes_first(self):
+        hits = regulation.search('1018.4')
+        self.assertTrue(hits[0]['source'].startswith('№87'))
+
+    def test_table_rows_come_with_a_short_hit(self):
+        hit = regulation.search('ცხრილი 1018.2')[0]
+        self.assertTrue(hit['source'].startswith('№498'))
+        self.assertIn('1,2 მ', hit['text'])
+
+
+class ReviewTest(GeminiCase):
+    def run_review(self):
+        return ai.review(self.folder(), pdf_tools.page_sizes(SAMPLE), pdf_tools.anchors(SAMPLE))
+
+    def test_sends_the_drawing_and_its_text_and_parses_the_answer(self):
+        self.gemini.replies.append(text_events(json.dumps(review())))
+        self.assertEqual(len(self.run_review()['checks']), len(RULES))
+        request = self.gemini.requests[0]
+        self.assertEqual(request['model'], 'gemini-3.6-flash')
+        content = request['input'][0]['content']
+        self.assertEqual(content[0], dict(type='document', uri='https://files.test/drawing', mime_type='application/pdf'))
+        self.assertIn('კიბე 2', content[-1]['text'])
+        self.assertEqual(request['response_format']['mime_type'], 'application/json')
+        rule_ids = request['response_format']['schema']['properties']['checks']['items']['properties']['rule_id']['enum']
+        self.assertIn('1018.4', rule_ids)
+        self.assertEqual(request['generation_config']['thinking_level'], 'high')
+
+    def test_moves_to_the_next_model_when_a_key_cannot_use_one(self):
+        self.gemini.replies += [(404, dict(error=dict(code=404, message='model not found'))), text_events(json.dumps(review()))]
+        self.run_review()
+        self.assertEqual([r['model'] for r in self.gemini.requests], ['gemini-3.6-flash', 'gemini-3.8-flash'])
+
+    def test_an_overloaded_model_is_passed_over_and_the_next_one_remembered(self):
+        busy = (503, dict(error=dict(code='service_unavailable', message='high demand')))
+        limit = (429, dict(error=dict(code='rate_limit_exceeded', message='limit: 0 on Free Tier')))
+        self.gemini.replies += [busy, limit, text_events(json.dumps(review())), text_events(json.dumps(review()))]
+        self.run_review()
+        self.run_review()
+        self.assertEqual([r['model'] for r in self.gemini.requests],
+                         ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash'])
+
+    def test_a_silent_model_is_passed_over(self):
+        self.gemini.replies += ['hang', text_events(json.dumps(review()))]
+        with mock.patch.multiple(ai, REVIEW_WAIT=0.3, REVIEW_WAIT_PER_PAGE=0):
+            self.assertEqual(len(self.run_review()['checks']), len(RULES))
+        self.assertEqual([r['model'] for r in self.gemini.requests], ['gemini-3.6-flash', 'gemini-3.8-flash'])
+
+    def test_when_every_model_is_busy_it_says_so(self):
+        self.gemini.replies.append((503, dict(error=dict(code='service_unavailable', message='high demand'))))
+        with self.assertRaises(ai.ReviewError) as raised:
+            self.run_review()
+        self.assertEqual(raised.exception.code, 'ai_busy')
+        self.assertEqual(len(self.gemini.requests), len(ai.MODELS))
+
+    def test_failures_are_named(self):
+        for reply, code in (((400, dict(error=dict(code=400, message='API key not valid. Please pass a valid API key.'))), 'ai_key_rejected'),
+                            ((402, dict(error=dict(code=402, message='credit depleted'))), 'ai_no_credit'),
+                            ((403, dict(error=dict(code=403, message='denied'))), 'ai_key_rejected'),
+                            (text_events('{"checks"', status='incomplete'), 'ai_truncated'),
+                            (text_events('not json'), 'ai_failed'),
+                            ([dict(event_type='error', error=dict(code='x', message='blocked'))], 'ai_failed')):
+            self.gemini.replies.append(reply)
+            with self.assertRaises(ai.ReviewError, msg=code) as raised:
+                self.run_review()
+            self.assertEqual(raised.exception.code, code)
+            self.gemini.replies.clear()
+
+
+class LargePdfTest(unittest.TestCase):
+    def test_an_oversized_pdf_gets_a_lighter_copy_with_its_text(self):
+        folder = Path(tempfile.mkdtemp())
+        lighter = pdf_tools.for_model(SAMPLE, folder / 'model.pdf', 1)
+        self.assertIsNone(lighter)   # nothing fits one byte
+        self.assertEqual(pdf_tools.for_model(SAMPLE, folder / 'model.pdf', 10 ** 9), SAMPLE)
+
+    def test_repeated_marks_are_left_out_of_the_listing(self):
+        anchors = [dict(id=i, page=1, text=text) for i, text in enumerate(('ПГ', 'კარი 75 სმ', 'კარი 75 სმ'))]
+        self.assertEqual(ai.listing(anchors), '#1 p1: კარი 75 სმ')
+
+
+class ChatTest(GeminiCase):
+    def test_runs_the_search_tool_and_chains_the_conversation(self):
+        self.gemini.replies += [call_events('1018.4', id='a'), text_events('ჩიხი 6,0 მ-ია.', id='b'), text_events('კი.', id='c')]
+        state = {}
+        events = list(ai.chat_turn('რა არის ჩიხის ლიმიტი?', list, state))
+        self.assertEqual([e['type'] for e in events], ['searching', 'text'])
+        result = self.gemini.requests[1]
+        self.assertEqual((result['previous_interaction_id'], result['input'][0]['type'], result['input'][0]['call_id']), ('a', 'function_result', 'c1'))
+        self.assertIn('1018.4', result['input'][0]['result'][0]['text'])
+        self.assertEqual(state['interaction'], 'b')
+        list(ai.chat_turn('მადლობა', list, state))
+        self.assertEqual(self.gemini.requests[2]['previous_interaction_id'], 'b')
+
+    def test_a_forgotten_conversation_starts_again_with_the_drawing(self):
+        self.gemini.replies += [(404, dict(error=dict(code=404, message='gone'))), text_events('კი.', id='n')]
+        state = dict(interaction='old')
+        context = lambda: [dict(type='text', text='report')]
+        self.assertEqual([e['type'] for e in ai.chat_turn('კითხვა', context, state)], ['text'])
+        self.assertEqual(self.gemini.requests[1]['input'][0]['content'][0]['text'], 'report')
+        self.assertNotIn('previous_interaction_id', self.gemini.requests[1])
+        self.assertEqual(state['interaction'], 'n')
+
+    def test_a_bad_tool_input_is_reported_to_the_model(self):
+        self.assertTrue(ai.run_tool(dict(id='c', name='search_regulation', arguments={}, text=''))['is_error'])
+
+    def test_offline_answers_come_from_the_rules_and_say_so(self):
+        answer = ai.offline_answer('What is the minimum corridor width?', 'en')
+        self.assertIn('1018.2', answer)
+        self.assertIn('not written by AI', answer)
+        self.assertIn('1018.2', ai.offline_answer('რა მინიმალური სიგანე უნდა ჰქონდეს დერეფანს?', 'ka'))
+        self.assertIn('1021.2', ai.offline_answer('How many exits does a storey need?', 'en'))
+
+
+class ServerTest(GeminiCase):
+    def setUp(self):
+        super().setUp()
+        folder = Path(tempfile.mkdtemp())
+        for patch in (mock.patch.object(settings, 'REPORTS', folder / 'reports'), mock.patch.object(settings, 'CONFIG', folder / 'config.json'),
+                      mock.patch.object(settings, 'HOME', folder), mock.patch.object(server, 'SAMPLE_PAUSE', 0), mock.patch.dict('os.environ', GEMINI_API_KEY='', GOOGLE_API_KEY='')):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.app = server.app.test_client()
+
+    def finish(self, report_id):
+        self.assertEqual(self.app.post(f'/api/reports/{report_id}/check').status_code, 200)
+        for _ in range(200):
+            stage = self.app.get(f'/api/reports/{report_id}/stage').json
+            if stage['stage'] in ('done', 'failed'):
+                return stage
+            time.sleep(0.02)
+        self.fail('check did not finish')
+
+    def test_sample_gives_a_full_report_without_a_key(self):
+        report_id = self.app.post('/api/sample').json['id']
+        self.assertEqual(self.finish(report_id)['stage'], 'done')
+        report = self.app.get(f'/api/reports/{report_id}').json
+        self.assertTrue(report['demo'])
+        self.assertEqual(report['verdict'], 'fail')
+        door = next(f for f in report['findings'] if f['rule'] == '1008.1.1')
+        self.assertEqual((door['page'], door['found']), (2, '75 სმ'))
+        self.assertIsNotNone(door['box'])
+        with self.app.get(f'/api/reports/{report_id}/pages/2.png') as image:
+            self.assertEqual(image.mimetype, 'image/png')
+        self.assertEqual(self.app.get(f'/api/reports/{report_id}/pages/9.png').status_code, 404)
+        self.assertEqual(len(self.app.get('/api/reports').json['reports']), 1)
+
+    def test_upload_rejects_what_is_not_a_pdf(self):
+        send = lambda name, data: self.app.post('/api/reports', data=dict(file=(io.BytesIO(data), name)), content_type='multipart/form-data')
+        self.assertEqual(send('a.dwg', b'x').json['error'], 'bad_file_type')
+        self.assertEqual(send('a.pdf', b'not a pdf').json['error'], 'unreadable_pdf')
+
+    def test_a_real_check_needs_a_key_and_uses_it(self):
+        upload = self.app.post('/api/reports', data=dict(file=(io.BytesIO(SAMPLE.read_bytes()), 'plan.pdf')), content_type='multipart/form-data').json
+        self.assertEqual(self.app.post(f'/api/reports/{upload["id"]}/check').json['error'], 'ai_not_connected')
+        self.app.post('/api/key', json=dict(key='sk-test'))
+        self.assertTrue(self.app.get('/api/status').json['ai'])
+        self.gemini.replies.append(text_events(json.dumps(review())))
+        self.assertEqual(self.finish(upload['id'])['stage'], 'done')
+        self.assertEqual(self.app.get(f'/api/reports/{upload["id"]}').json['verdict'], 'clear')
+        self.assertEqual(settings.CONFIG.stat().st_mode & 0o777, 0o600)
+
+    def test_a_failed_check_names_the_reason(self):
+        upload = self.app.post('/api/reports', data=dict(file=(io.BytesIO(SAMPLE.read_bytes()), 'plan.pdf')), content_type='multipart/form-data').json
+        self.app.post('/api/key', json=dict(key='sk-test'))
+        self.gemini.replies.append((429, dict(error=dict(code=429, message='quota'))))
+        self.assertEqual(self.finish(upload['id'])['error'], 'ai_busy')
+
+    def test_chat_with_a_key_remembers_the_conversation(self):
+        report_id = self.app.post('/api/sample').json['id']
+        self.finish(report_id)
+        self.app.post('/api/key', json=dict(key='sk-test'))
+        self.gemini.replies.append(text_events('პასუხი', id='z'))
+        body = self.app.post('/api/chat', json=dict(message='კითხვა', report=report_id)).get_data(as_text=True)
+        self.assertIn('პასუხი', body)
+        content = self.gemini.requests[0]['input'][0]['content']
+        self.assertEqual(content[0]['type'], 'document')
+        self.assertIn('Report of the check', content[1]['text'])
+        said = self.app.get(f'/api/reports/{report_id}/chat').json['messages']
+        self.assertEqual([m['text'] for m in said], ['კითხვა', 'პასუხი'])
+
+    def test_chat_works_offline_and_ids_are_checked(self):
+        body = self.app.post('/api/chat', json=dict(message='When is a building high-rise?', lang='en')).get_data(as_text=True)
+        self.assertIn('23', body)
+        self.assertIn('"done"', body)
+        self.assertEqual(self.app.get('/api/reports/../../etc').status_code, 404)
+        self.assertEqual(self.app.get('/api/reports/0123/pages/1.png').status_code, 404)
+
+
+if __name__ == '__main__':
+    unittest.main()
