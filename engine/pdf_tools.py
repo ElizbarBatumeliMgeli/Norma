@@ -39,8 +39,9 @@ def anchors(path):
                 for line in block.get('lines', []):
                     text = ' '.join(span['text'] for span in line['spans']).strip()
                     if text:
-                        x0, y0, x1, y1 = line['bbox']
-                        lines.append((text, x0 / width, y0 / height, x1 / width, y1 / height))
+                        # CAD exports are often rotated pages: text boxes come unrotated, the picture does not.
+                        box = (pymupdf.Rect(line['bbox']) * page.rotation_matrix).normalize()
+                        lines.append((text, box.x0 / width, box.y0 / height, box.x1 / width, box.y1 / height))
             for text, x0, y0, x1, y1 in lines[:MAX_ANCHORS]:
                 found.append(dict(id=len(found), page=number, text=text, box=[round(v, 4) for v in (x0, y0, x1, y1)]))
     return found
@@ -57,9 +58,10 @@ def render_page(path, number, target, longest=2400):
     return target
 
 
-def for_model(path, target, limit):
-    """A PDF within `limit` bytes for the AI: the original if it fits, else a copy with smaller images,
-    else a copy of page images. The app keeps showing the original. None if nothing fits."""
+def for_model(path, target, limit, first=()):
+    """A PDF within `limit` bytes for the AI: the original if it fits, else a copy with smaller images, else a copy
+    of page images. If even that is too large, the sheets in `first` come first and the rest are left blank, so page
+    numbers stay right. The app keeps showing the original. None if nothing fits."""
     path, target = Path(path), Path(target)
     if path.stat().st_size <= limit:
         return path
@@ -71,13 +73,21 @@ def for_model(path, target, limit):
     if target.stat().st_size <= limit:
         return target
     with open_pdf(path) as document, pymupdf.open() as images:
-        for page in document:
+        shown, size = {}, 0
+        for number in [*first, *(n for n in range(1, document.page_count + 1) if n not in first)]:
+            page = document[number - 1]
             zoom = 2200 / max(page.rect.width, page.rect.height)
-            pixels = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
+            picture = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False).tobytes('jpeg', jpg_quality=70)
+            if size + len(picture) > limit * 0.95:
+                break
+            shown[number] = picture
+            size += len(picture)
+        for number, page in enumerate(document, 1):
             sheet = images.new_page(width=page.rect.width, height=page.rect.height)
-            sheet.insert_image(sheet.rect, stream=pixels.tobytes('jpeg', jpg_quality=70))
+            if number in shown:
+                sheet.insert_image(sheet.rect, stream=shown[number])
         images.save(target, garbage=3, deflate=True)
-    if target.stat().st_size <= limit:
+    if shown and target.stat().st_size <= limit:
         return target
     target.unlink()
     return None

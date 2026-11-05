@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { Staged } from "./project";
 
 export type Status = "fail" | "missing" | "verify" | "pass" | "not_applicable";
 export type Verdict = "fail" | "missing" | "verify" | "clear";
@@ -24,9 +25,38 @@ export type Finding = {
   page: number | null;
   /** Fractions of the page: x0, y0, x1, y1 from the top left. */
   box: [number, number, number, number] | null;
+  /** Worked out from the CAD geometry, with no AI. */
+  measured?: boolean;
 };
 
-export type Page = { number: number; width: number; height: number };
+/** Which file a sheet came from, in a project of several files. */
+export type Page = { number: number; width: number; height: number; file?: string; discipline?: string; label?: string };
+export type Mark = { page: number; box: [number, number, number, number] | null };
+
+/** One storey, or a group of identical ones, in metres. */
+export type Floor = {
+  name: string;
+  floors: number[];
+  page: number;
+  level: number | null;
+  stairs: number;
+  units: number;
+  stair_width: number | null;
+  tread: number | null;
+  riser: number | null;
+  stair_doors: number | null;
+  sprinklers: number;
+  cabinets: number;
+  landing_valves: number;
+  separation_inner?: number;
+  separation_outer?: number;
+  corridor?: number;
+  narrowest?: number;
+  dead_end?: number | null;
+  marks: { stairs?: Mark; separation?: Mark; corridor?: Mark };
+};
+
+export type ProjectFile = { name: string; discipline: string; sheets: number; error?: string; detail?: string };
 export type Counts = Record<Status, number>;
 
 export type Report = {
@@ -34,6 +64,14 @@ export type Report = {
   name: string;
   created: string;
   demo: boolean;
+  /** Who wrote the review, when it did not come from the app's AI. */
+  reviewer?: string;
+  /** False when the report comes from measuring alone. */
+  ai_used?: boolean;
+  /** Why the AI could not take part, when the measurements stand without it. */
+  ai_error?: string | null;
+  files?: ProjectFile[];
+  measured?: { floors: Floor[]; top_level: number | null; storeys: number } | null;
   pages: Page[];
   building: { name: string; occupancy: string; storeys: number | null; high_rise: boolean | null; summary_ka: string; summary_en: string };
   findings: Finding[];
@@ -103,18 +141,25 @@ export const pageUrl = (id: string, page: number) => `${base}/api/reports/${id}/
 export const chatHistory = (id: string) =>
   call<{ messages: { role: "user" | "assistant"; text: string }[] }>(`/api/reports/${id}/chat`).then((b) => b.messages);
 
-export function uploadPdf(file: File): Promise<string> {
-  const body = new FormData();
-  body.append("file", file);
-  return call<{ id: string }>("/api/reports", { method: "POST", body }).then((b) => b.id);
+/** Creates a project and sends its files one at a time, so each can be large. */
+export async function uploadProject(name: string, staged: Staged[], onFile: (done: number) => void): Promise<string> {
+  const { id } = await call<{ id: string }>("/api/reports", json({ name }));
+  for (const [index, item] of staged.entries()) {
+    const body = new FormData();
+    body.append("file", item.file);
+    body.append("discipline", item.discipline);
+    await call(`/api/reports/${id}/files`, { method: "POST", body });
+    onFile(index + 1);
+  }
+  return id;
 }
 
 /** Starts a check and reports each stage until it finishes. */
-export async function runCheck(id: string, onStage: (stage: Stage) => void): Promise<void> {
+export async function runCheck(id: string, onStage: (stage: Stage, done?: number | null, total?: number) => void): Promise<void> {
   await call(`/api/reports/${id}/check`, { method: "POST" });
   for (;;) {
-    const state = await call<{ stage: Stage; error?: string; detail?: string }>(`/api/reports/${id}/stage`);
-    onStage(state.stage);
+    const state = await call<{ stage: Stage; error?: string; detail?: string; done?: number | null; total?: number }>(`/api/reports/${id}/stage`);
+    onStage(state.stage, state.done, state.total);
     if (state.stage === "done") return;
     if (state.stage === "failed") throw { code: state.error ?? "check_failed", detail: state.detail } satisfies ApiError;
     await sleep(500);

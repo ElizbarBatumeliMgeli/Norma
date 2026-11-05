@@ -39,7 +39,7 @@ function Scene() {
   );
 }
 
-export default function Progress({ fileName, current }: { fileName: string; current: Step }) {
+export default function Progress({ fileName, current, note }: { fileName: string; current: Step; note: string }) {
   const { t } = useI18n();
   const reached = STEPS.indexOf(current);
   return (
@@ -60,7 +60,7 @@ export default function Progress({ fileName, current }: { fileName: string; curr
             </span>
             <span className="step-text">
               <span className="step-label">{t(LABELS[step])}</span>
-              <span className="step-note">{step === "checking" && i === reached ? t("stageCheckingNote") : " "}</span>
+              <span className="step-note">{i !== reached ? " " : note || (step === "checking" ? t("stageCheckingNote") : " ")}</span>
             </span>
           </li>
         ))}

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { Finding, Report } from "../lib/api";
+import type { Finding, Mark, Report } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { VERDICT_STATUS } from "./Home";
+import Measurements from "./Measurements";
 import Viewer from "./Viewer";
 
 const ATTENTION = ["fail", "missing", "verify"];
@@ -37,6 +38,7 @@ function Row({ finding, open, onOpen, onAsk }: { finding: Finding; open: boolean
             <span className="status-pill">{t(`status_${finding.status}`)}</span>
             <span className="clause">{finding.rule}</span>
             {finding.found && <span className="finding-found">{finding.found}</span>}
+            {finding.measured && <span className="measured-tag">{t("measuredTag")}</span>}
           </span>
         </span>
       </button>
@@ -81,6 +83,10 @@ export default function ReportView({ report, onReset, onAsk }: Props) {
   const ka = lang === "ka";
   const [category, setCategory] = useState("all");
   const [selected, setSelected] = useState<Finding | null>(null);
+  const [focus, setFocus] = useState<Mark | null>(null);
+  const [tab, setTab] = useState<"findings" | "floors">("findings");
+  const floors = report.measured?.floors ?? [];
+  const unread = report.files?.filter((f) => f.error) ?? [];
 
   const shown = useMemo(
     () => report.findings.filter((f) => category === "all" || f.category === category),
@@ -91,7 +97,10 @@ export default function ReportView({ report, onReset, onAsk }: Props) {
   const notApplicable = shown.filter((f) => f.status === "not_applicable");
   const { counts, verdict } = report;
 
-  const select = (f: Finding) => setSelected((current) => (current === f ? null : f));
+  const select = (f: Finding) => {
+    setFocus(null);
+    setSelected((current) => (current === f ? null : f));
+  };
   const row = (f: Finding) => (
     <Row
       key={f.number}
@@ -137,8 +146,53 @@ export default function ReportView({ report, onReset, onAsk }: Props) {
         </div>
       )}
 
-      <div className="report-body">
+      {report.reviewer && (
+        <div className="notice notice-info" role="status">
+          <p className="notice-title">{t("reviewedBy", report.reviewer)}</p>
+        </div>
+      )}
+
+      {report.ai_used === false && !report.demo && !report.reviewer && (
+        <div className="notice notice-info" role="status">
+          <p className="notice-title">{t(report.ai_error ? "aiFailedMeasured" : "measuredOnly", report.counts.pass)}</p>
+          {report.ai_error && <p className="notice-detail">{t(`error_${report.ai_error}`)}</p>}
+        </div>
+      )}
+
+      {unread.length > 0 && (
+        <details className="notice notice-warn">
+          <summary className="notice-title">{t("filesUnread", unread.length)}</summary>
+          <ul className="notice-list">
+            {unread.map((f) => (
+              <li key={f.name}>
+                {f.name}: {t(`error_${f.error}`) || t("error_check_failed")}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      <div className={`report-body${tab === "floors" ? " is-wide" : ""}`}>
         <div className="findings-pane">
+          {floors.length > 0 && (
+            <div className="segmented report-tabs" role="radiogroup">
+              {(["findings", "floors"] as const).map((key) => (
+                <button key={key} type="button" role="radio" aria-checked={tab === key} onClick={() => setTab(key)}>
+                  {t(key === "findings" ? "tabFindings" : "tabFloors")}
+                </button>
+              ))}
+            </div>
+          )}
+          {tab === "floors" ? (
+            <Measurements
+              floors={floors}
+              onFocus={(mark) => {
+                setSelected(null);
+                setFocus({ ...mark });
+              }}
+            />
+          ) : (
+            <>
           <div className="filter-row" role="group">
             <button type="button" className="filter" aria-pressed={category === "all"} onClick={() => setCategory("all")}>
               {t("allCategories")}
@@ -170,8 +224,10 @@ export default function ReportView({ report, onReset, onAsk }: Props) {
             {notApplicable.map(row)}
           </ul>
           <p className="legal-note">{t("legalNote")}</p>
+            </>
+          )}
         </div>
-        <Viewer report={report} findings={shown.filter((f) => ATTENTION.includes(f.status))} selected={selected} onSelect={select} />
+        <Viewer report={report} findings={shown.filter((f) => ATTENTION.includes(f.status))} selected={selected} onSelect={select} focus={focus} />
       </div>
     </section>
   );

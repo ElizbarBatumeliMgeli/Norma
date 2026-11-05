@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { recentReports, type ApiError, type EngineStatus, type Recent, type Verdict } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { DISCIPLINES, droppedFiles, guessDiscipline, isCad, isDrawing, ordered, projectName, type Discipline, type Staged } from "../lib/project";
 
 export const CATEGORY_ICONS: Record<string, string> = {
   scope: "M5 20V6l7-3 7 3v14M5 20h14M9.5 9h1M13.5 9h1M9.5 13h1M13.5 13h1M10.5 20v-3h3v3",
@@ -34,35 +35,49 @@ type Props = {
   status: EngineStatus | null;
   error: ApiError | null;
   onError: (error: ApiError | null) => void;
-  onFile: (file: File) => void;
+  onProject: (name: string, staged: Staged[]) => void;
   onSample: () => void;
   onOpen: (id: string) => void;
 };
 
-export default function Home({ status, error, onError, onFile, onSample, onOpen }: Props) {
+export default function Home({ status, error, onError, onProject, onSample, onOpen }: Props) {
   const { t, lang } = useI18n();
   const input = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const [recent, setRecent] = useState<Recent[]>([]);
+  const [staged, setStaged] = useState<Staged[]>([]);
+  const [name, setName] = useState<string | null>(null);
   const other = lang === "ka" ? "en" : "ka";
+  const counts = DISCIPLINES.map((d) => [d, staged.filter((s) => s.discipline === d).length] as const).filter(([, n]) => n);
 
   useEffect(() => {
     if (status) recentReports().then(setRecent, () => undefined);
   }, [status]);
 
-  function choose(list: FileList | null | undefined) {
-    const file = list?.[0];
-    if (!file) return;
-    if (!/\.pdf$/i.test(file.name)) return onError({ code: "bad_file_type", detail: file.name });
+  function add(found: { file: File; path: string }[]) {
+    const drawings = found.filter((f) => isDrawing(f.file.name));
+    if (!drawings.length) return onError({ code: "bad_file_type", detail: found[0]?.file.name });
     onError(null);
-    onFile(file);
+    setStaged((current) => {
+      const known = new Set(current.map((s) => s.path));
+      const fresh = drawings.filter((f) => !known.has(f.path)).map((f) => ({ ...f, discipline: guessDiscipline(f.path) }));
+      return ordered([...current, ...fresh]);
+    });
   }
 
-  function onDrop(e: DragEvent) {
+  function choose(list: FileList | null | undefined) {
+    if (list?.length) add([...list].map((file) => ({ file, path: file.webkitRelativePath || file.name })));
+  }
+
+  async function onDrop(e: DragEvent) {
     e.preventDefault();
     setOver(false);
-    choose(e.dataTransfer.files);
+    add(await droppedFiles(e.dataTransfer));
   }
+
+  const setDiscipline = (path: string, discipline: Discipline) =>
+    setStaged((current) => ordered(current.map((s) => (s.path === path ? { ...s, discipline } : s))));
 
   return (
     <section className="home">
@@ -98,20 +113,110 @@ export default function Home({ status, error, onError, onFile, onSample, onOpen 
         <span className="dropzone-text">
           <span className="dropzone-primary">{t("dropTitle")}</span>
           <span className="dropzone-secondary">
-            {t("dropHint")} · <span className="link">{t("chooseFile")}</span>
+            {t("dropHint")} · <span className="link">{t("chooseFile")}</span> ·{" "}
+            <button
+              type="button"
+              className="link link-button-plain"
+              onClick={(e) => {
+                e.stopPropagation();
+                folderInput.current?.click();
+              }}
+            >
+              {t("chooseFolder")}
+            </button>
           </span>
         </span>
       </div>
       <input
         ref={input}
         type="file"
-        accept=".pdf"
+        accept=".pdf,.dwg,.dxf"
+        multiple
         hidden
         onChange={(e) => {
           choose(e.currentTarget.files);
           e.currentTarget.value = "";
         }}
       />
+      <input
+        ref={folderInput}
+        type="file"
+        hidden
+        {...({ webkitdirectory: "" } as object)}
+        onChange={(e) => {
+          choose(e.currentTarget.files);
+          e.currentTarget.value = "";
+        }}
+      />
+
+      {staged.length > 0 && (
+        <div className="staged">
+          <div className="staged-head">
+            <input
+              className="staged-name"
+              aria-label={t("projectName")}
+              placeholder={t("projectName")}
+              value={name ?? projectName(staged)}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <ul className="staged-counts">
+              {counts.map(([discipline, count]) => (
+                <li key={discipline}>
+                  {t(`discipline_${discipline}`)} <span>{count}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <ul className="staged-list">
+            {staged.map((item) => (
+              <li key={item.path}>
+                <span className={`file-kind${isCad(item.file.name) ? " is-cad" : ""}`}>{item.file.name.split(".").pop()}</span>
+                <span className="staged-file" title={item.path}>
+                  {item.file.name}
+                </span>
+                <select
+                  className="staged-select"
+                  aria-label={t("disciplineLabel")}
+                  value={item.discipline}
+                  onChange={(e) => setDiscipline(item.path, e.target.value as Discipline)}
+                >
+                  {DISCIPLINES.map((d) => (
+                    <option key={d} value={d}>
+                      {t(`discipline_${d}`)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="staged-remove"
+                  aria-label={t("removeFile")}
+                  onClick={() => setStaged((current) => current.filter((s) => s.path !== item.path))}
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M4 4l8 8M12 4l-8 8" />
+                  </svg>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {status && !status.ai && <p className="staged-note">{t(staged.some((s) => isCad(s.file.name)) ? "noAiCad" : "noAiPdf")}</p>}
+          <div className="staged-actions">
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                setStaged([]);
+                setName(null);
+              }}
+            >
+              {t("clearFiles")}
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => onProject((name ?? projectName(staged)).trim() || staged[0].file.name, staged)}>
+              {t("startCheck", staged.length)}
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="notice notice-warn" role="alert">

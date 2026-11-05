@@ -10,7 +10,7 @@ import {
   getStatus,
   runCheck,
   startSample,
-  uploadPdf,
+  uploadProject,
   waitForEngine,
   type ApiError,
   type EngineStatus,
@@ -18,6 +18,7 @@ import {
   type Report,
 } from "./lib/api";
 import { I18n, storeLanguage, storedLanguage, translator } from "./lib/i18n";
+import type { Staged } from "./lib/project";
 import "./App.css";
 
 type View = "home" | "progress" | "report";
@@ -35,6 +36,7 @@ function App() {
   const [view, setView] = useState<View>("home");
   const [fileName, setFileName] = useState("");
   const [step, setStep] = useState<Step>("upload");
+  const [stepNote, setStepNote] = useState("");
   const [error, setError] = useState<ApiError | null>(null);
   const [report, setReport] = useState<Report | null>(null);
 
@@ -83,11 +85,13 @@ function App() {
     setError(null);
     setFileName(name);
     setStep("upload");
+    setStepNote("");
     setView("progress");
     try {
       const id = await prepare();
-      await runCheck(id, (stage) => {
+      await runCheck(id, (stage, done, total) => {
         if (stage === "reading" || stage === "checking" || stage === "writing") setStep(stage);
+        setStepNote(stage === "reading" && total ? i18n.t("filesDone", done ?? 0, total) : "");
       });
       setReport(await getReport(id));
       setView("report");
@@ -168,13 +172,15 @@ function App() {
                   status={status}
                   error={error}
                   onError={setError}
-                  onFile={(file) => check(file.name, () => uploadPdf(file))}
+                  onProject={(name: string, staged: Staged[]) =>
+                    check(name, () => uploadProject(name, staged, (done) => setStepNote(i18n.t("filesDone", done, staged.length))))
+                  }
                   onSample={() => check(SAMPLE_NAME, startSample)}
                   onOpen={open}
                 />
               </div>
             )}
-            {view === "progress" && <Progress fileName={fileName} current={step} />}
+            {view === "progress" && <Progress fileName={fileName} current={step} note={stepNote} />}
             {view === "report" && report && <ReportView report={report} onReset={reset} onAsk={ask} />}
           </main>
         )}

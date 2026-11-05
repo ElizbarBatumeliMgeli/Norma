@@ -24,6 +24,8 @@ MODELS = (os.environ['NORMA_MODEL'],) if os.environ.get('NORMA_MODEL') else (
 MAX_PDF_BYTES = 48 * 1000 * 1000    # Gemini takes PDFs up to 50 MB
 MAX_PAGES = 1000
 MAX_TILED_PAGES = 8                 # close-ups are sent for at most this many sheets without text
+MAX_LISTED = 15000                  # text items per request; a whole project can have far more
+READ_FIRST = ('architecture', 'fire', 'structure', 'hvac', 'plumbing', 'elv', 'electrical', 'other')
 MAX_OUTPUT_TOKENS = 65536
 UPLOAD_LIFETIME = 47 * 3600         # Gemini keeps uploaded files for 48 hours
 # A model sends nothing while it thinks, and when overloaded it can stay silent for good, so each
@@ -226,26 +228,52 @@ def upload(path, record):
     return file.uri
 
 
+def page_records(folder):
+    meta = folder / 'meta.json'
+    return json.loads(meta.read_text(encoding='utf-8'))['pages'] if meta.exists() else []
+
+
+def by_importance(pages):
+    """Sheet numbers, the disciplines that decide most rules first. Used when a project is too big to send whole."""
+    rank = {name: index for index, name in enumerate(READ_FIRST)}
+    return [p['number'] for p in sorted(pages, key=lambda p: rank.get(p.get('discipline'), len(rank)))]
+
+
 def drawing_block(folder):
     """The drawing as Gemini takes it, using a lighter copy when the original is over the size limit."""
-    path = pdf_tools.for_model(folder / 'drawing.pdf', folder / 'model.pdf', MAX_PDF_BYTES)
+    path = pdf_tools.for_model(folder / 'drawing.pdf', folder / 'model.pdf', MAX_PDF_BYTES, by_importance(page_records(folder)))
     if path is None:
         raise ReviewError('pdf_too_large')
     return {'type': 'document', 'uri': upload(path, folder / 'upload.json'), 'mime_type': 'application/pdf'}
 
 
-def listing(anchors):
-    """The text items worth reading: one of each per sheet, without the short marks CAD repeats everywhere."""
+def listing(anchors, pages=()):
+    """The text items worth reading: one of each per sheet, without the short marks CAD repeats everywhere.
+    A big project has more than a request can hold, so the sheets that matter most are listed first."""
+    position = {number: index for index, number in enumerate(by_importance(pages))}
     seen, lines = set(), []
-    for a in anchors:
+    for a in sorted(anchors, key=lambda a: position.get(a['page'], 0)):
         if len(a['text']) >= 3 and (a['page'], a['text']) not in seen:
             seen.add((a['page'], a['text']))
             lines.append(f'#{a["id"]} p{a["page"]}: {a["text"]}')
-    return '\n'.join(lines) or '(none: the sheets have no text layer)'
+    return '\n'.join(lines[:MAX_LISTED]) or '(none: the sheets have no text layer)'
 
 
-def review_content(folder, sizes, anchors):
-    """The drawing, sharper tiles of sheets with no text layer, and the text items."""
+def project_notes(sizes, measured):
+    """Which sheet is which, and what was measured from the CAD files."""
+    sheets = [f'p{p["number"]}: {p["discipline"]} · {p["file"]}' + (f' · {p["label"]}' if p.get('label') else '') + (f' · 1:{p["scale"]}' if p.get('scale') else '')
+              for p in sizes if p.get('file')]
+    notes = []
+    if sheets:
+        notes.append('Sheets of this project:\n' + '\n'.join(sheets))
+    if measured and measured['floors']:
+        rows = [{key: value for key, value in row.items() if key != 'marks'} for row in measured['floors']]
+        notes.append('Measured from the CAD geometry, in metres. These are exact readings of the file: use them instead of scaling from the image.\n' + json.dumps(rows, ensure_ascii=False))
+    return notes
+
+
+def review_content(folder, sizes, anchors, measured=None):
+    """The drawing, sharper tiles of sheets with no text layer, what was measured, and the text items."""
     path = folder / 'drawing.pdf'
     content = [drawing_block(folder)]
     counts = {page['number']: sum(a['page'] == page['number'] for a in anchors) for page in sizes}
@@ -253,30 +281,34 @@ def review_content(folder, sizes, anchors):
     for number in unreadable[:MAX_TILED_PAGES]:
         content.append({'type': 'text', 'text': f'Close-up tiles of page {number}, left to right, top to bottom:'})
         content += [{'type': 'image', 'data': base64.b64encode(tile).decode(), 'mime_type': 'image/jpeg'} for tile in pdf_tools.tiles(path, number)]
-    content.append({'type': 'text', 'text': f'Text items on the sheets (id, page, text):\n{listing(anchors)}\n\nReview this drawing set against the rules.'})
+    content += [{'type': 'text', 'text': note} for note in project_notes(sizes, measured)]
+    content.append({'type': 'text', 'text': f'Text items on the sheets (id, page, text):\n{listing(anchors, sizes)}\n\nReview this drawing set against the rules.'})
     return content
 
 
-def review(folder, sizes, anchors):
+def review(folder, sizes, anchors, measured=None):
     """One review of the drawing set: the parsed result of REVIEW_SCHEMA."""
     if len(sizes) > MAX_PAGES:
         raise ReviewError('too_many_pages')
-    turn = Turn()
-    try:
-        text = ''.join(answer(
-            client(), turn, min(REVIEW_WAIT + REVIEW_WAIT_PER_PAGE * len(sizes), REVIEW_WAIT_MAX),
-            input=review_content(folder, sizes, anchors), system_instruction=SYSTEM, stream=True, store=False,
-            response_format={'type': 'text', 'mime_type': 'application/json', 'schema': REVIEW_SCHEMA},
-            generation_config={'thinking_level': 'high', 'max_output_tokens': MAX_OUTPUT_TOKENS},
-        ))
-    except API_ERRORS as error:
-        raise api_error(error)
-    if turn.status == 'incomplete':
-        raise ReviewError('ai_truncated')
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        raise ReviewError('ai_failed', f'status {turn.status}: {text[:200]}')
+    content = review_content(folder, sizes, anchors, measured)
+    wait = min(REVIEW_WAIT + REVIEW_WAIT_PER_PAGE * len(sizes), REVIEW_WAIT_MAX)
+    # Nothing is shown until the review is whole, so an answer cut off midway is simply asked for again.
+    global model_index
+    for attempt in range(len(MODELS)):
+        turn = Turn()
+        try:
+            text = ''.join(answer(
+                client(), turn, wait, input=content, system_instruction=SYSTEM, stream=True, store=False,
+                response_format={'type': 'text', 'mime_type': 'application/json', 'schema': REVIEW_SCHEMA},
+                generation_config={'thinking_level': 'high', 'max_output_tokens': MAX_OUTPUT_TOKENS},
+            ))
+            return json.loads(text)
+        except json.JSONDecodeError:
+            failure = ReviewError('ai_truncated' if turn.status == 'incomplete' else 'ai_failed', f'status {turn.status}: {text[:200]}')
+        except API_ERRORS as error:
+            raise api_error(error)   # `answer` has already tried every model
+        model_index = (model_index + 1) % len(MODELS)
+    raise failure
 
 
 # ---------- Chat ----------

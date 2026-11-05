@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 from google import genai
+import pymupdf
 
 import ai
 import pdf_tools
@@ -19,6 +20,7 @@ from report import assemble
 from rulebook import BY_ID, RULES
 import server
 import settings
+from test_cad import floor_plan
 
 SAMPLE = Path(__file__).parent / 'demo' / 'sample.pdf'
 
@@ -159,6 +161,17 @@ class ReviewTest(GeminiCase):
         self.assertEqual([r['model'] for r in self.gemini.requests],
                          ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash'])
 
+    def test_an_answer_cut_off_is_asked_for_again_on_the_next_model(self):
+        self.gemini.replies += [text_events('{"building": {"name"', status='incomplete'), text_events('not json'), text_events(json.dumps(review()))]
+        self.assertEqual(len(self.run_review()['checks']), len(RULES))
+        self.assertEqual(len(self.gemini.requests), 3)
+
+    def test_an_answer_never_whole_is_named(self):
+        self.gemini.replies += [text_events('{', status='incomplete') for _ in ai.MODELS]
+        with self.assertRaises(ai.ReviewError) as raised:
+            self.run_review()
+        self.assertEqual(raised.exception.code, 'ai_truncated')
+
     def test_a_silent_model_is_passed_over(self):
         self.gemini.replies += ['hang', text_events(json.dumps(review()))]
         with mock.patch.multiple(ai, REVIEW_WAIT=0.3, REVIEW_WAIT_PER_PAGE=0):
@@ -176,8 +189,6 @@ class ReviewTest(GeminiCase):
         for reply, code in (((400, dict(error=dict(code=400, message='API key not valid. Please pass a valid API key.'))), 'ai_key_rejected'),
                             ((402, dict(error=dict(code=402, message='credit depleted'))), 'ai_no_credit'),
                             ((403, dict(error=dict(code=403, message='denied'))), 'ai_key_rejected'),
-                            (text_events('{"checks"', status='incomplete'), 'ai_truncated'),
-                            (text_events('not json'), 'ai_failed'),
                             ([dict(event_type='error', error=dict(code='x', message='blocked'))], 'ai_failed')):
             self.gemini.replies.append(reply)
             with self.assertRaises(ai.ReviewError, msg=code) as raised:
@@ -192,6 +203,21 @@ class LargePdfTest(unittest.TestCase):
         lighter = pdf_tools.for_model(SAMPLE, folder / 'model.pdf', 1)
         self.assertIsNone(lighter)   # nothing fits one byte
         self.assertEqual(pdf_tools.for_model(SAMPLE, folder / 'model.pdf', 10 ** 9), SAMPLE)
+
+    def test_text_positions_follow_a_rotated_page(self):
+        path = Path(tempfile.mkdtemp()) / 'rotated.pdf'
+        document = pymupdf.open()
+        page = document.new_page(width=400, height=200)
+        page.insert_text((300, 50), 'MARK', fontsize=12)
+        page.set_rotation(90)
+        document.save(path)
+        box = pdf_tools.anchors(path)[0]['box']
+        rendered = pymupdf.open(path)[0]
+        expected = (rendered.search_for('MARK')[0] * rendered.rotation_matrix).normalize()
+        self.assertAlmostEqual(box[0], expected.x0 / rendered.rect.width, places=2)
+        self.assertAlmostEqual(box[1], expected.y0 / rendered.rect.height, places=2)
+        self.assertLess(box[1], 1)
+        self.assertGreater(box[1], 0.7)   # far right of the unrotated sheet is low on the rotated one
 
     def test_repeated_marks_are_left_out_of_the_listing(self):
         anchors = [dict(id=i, page=1, text=text) for i, text in enumerate(('ПГ', 'კარი 75 სმ', 'კარი 75 სმ'))]
@@ -243,7 +269,7 @@ class ServerTest(GeminiCase):
 
     def finish(self, report_id):
         self.assertEqual(self.app.post(f'/api/reports/{report_id}/check').status_code, 200)
-        for _ in range(200):
+        for _ in range(1500):
             stage = self.app.get(f'/api/reports/{report_id}/stage').json
             if stage['stage'] in ('done', 'failed'):
                 return stage
@@ -264,26 +290,63 @@ class ServerTest(GeminiCase):
         self.assertEqual(self.app.get(f'/api/reports/{report_id}/pages/9.png').status_code, 404)
         self.assertEqual(len(self.app.get('/api/reports').json['reports']), 1)
 
-    def test_upload_rejects_what_is_not_a_pdf(self):
-        send = lambda name, data: self.app.post('/api/reports', data=dict(file=(io.BytesIO(data), name)), content_type='multipart/form-data')
-        self.assertEqual(send('a.dwg', b'x').json['error'], 'bad_file_type')
-        self.assertEqual(send('a.pdf', b'not a pdf').json['error'], 'unreadable_pdf')
+    def project(self, *files):
+        """A new project with these (name, bytes, discipline) files."""
+        report_id = self.app.post('/api/reports', json=dict(name='Plan')).json['id']
+        for name, data, discipline in files:
+            self.send(report_id, name, data, discipline)
+        return report_id
+
+    def send(self, report_id, name, data, discipline='fire'):
+        return self.app.post(f'/api/reports/{report_id}/files', data=dict(file=(io.BytesIO(data), name), discipline=discipline), content_type='multipart/form-data')
+
+    def test_upload_rejects_what_is_not_a_drawing(self):
+        report_id = self.project()
+        self.assertEqual(self.send(report_id, 'a.docx', b'x').json['error'], 'bad_file_type')
+        self.assertEqual(self.send(report_id, 'a.pdf', b'not a pdf').json['error'], 'unreadable_pdf')
 
     def test_a_real_check_needs_a_key_and_uses_it(self):
-        upload = self.app.post('/api/reports', data=dict(file=(io.BytesIO(SAMPLE.read_bytes()), 'plan.pdf')), content_type='multipart/form-data').json
-        self.assertEqual(self.app.post(f'/api/reports/{upload["id"]}/check').json['error'], 'ai_not_connected')
+        report_id = self.project(('plan.pdf', SAMPLE.read_bytes(), 'architecture'))
+        self.assertEqual(self.app.post(f'/api/reports/{report_id}/check').json['error'], 'ai_not_connected')
         self.app.post('/api/key', json=dict(key='sk-test'))
         self.assertTrue(self.app.get('/api/status').json['ai'])
         self.gemini.replies.append(text_events(json.dumps(review())))
-        self.assertEqual(self.finish(upload['id'])['stage'], 'done')
-        self.assertEqual(self.app.get(f'/api/reports/{upload["id"]}').json['verdict'], 'clear')
+        self.assertEqual(self.finish(report_id)['stage'], 'done')
+        self.assertEqual(self.app.get(f'/api/reports/{report_id}').json['verdict'], 'clear')
         self.assertEqual(settings.CONFIG.stat().st_mode & 0o777, 0o600)
 
     def test_a_failed_check_names_the_reason(self):
-        upload = self.app.post('/api/reports', data=dict(file=(io.BytesIO(SAMPLE.read_bytes()), 'plan.pdf')), content_type='multipart/form-data').json
+        report_id = self.project(('plan.pdf', SAMPLE.read_bytes(), 'architecture'))
         self.app.post('/api/key', json=dict(key='sk-test'))
         self.gemini.replies.append((429, dict(error=dict(code=429, message='quota'))))
-        self.assertEqual(self.finish(upload['id'])['error'], 'ai_busy')
+        self.assertEqual(self.finish(report_id)['error'], 'ai_busy')
+
+    def cad_project(self):
+        with tempfile.TemporaryDirectory() as folder:
+            plan = Path(folder) / 'plan.dxf'
+            floor_plan(plan)
+            return self.project(('10 სართული.dxf', plan.read_bytes(), 'fire'))
+
+    def test_the_ai_is_given_the_measurements_and_the_sheet_list(self):
+        report_id = self.cad_project()
+        self.app.post('/api/key', json=dict(key='sk-test'))
+        self.gemini.replies.append(text_events(json.dumps(review())))
+        self.assertEqual(self.finish(report_id)['stage'], 'done')
+        sent = json.dumps(self.gemini.requests[-1]['input'], ensure_ascii=False)
+        self.assertIn('Measured from the CAD geometry', sent)
+        self.assertIn('p1: fire · 10 სართული.dxf', sent)
+        report = self.app.get(f'/api/reports/{report_id}').json
+        self.assertTrue(report['ai_used'])
+        self.assertTrue(next(f for f in report['findings'] if f['rule'] == '1009.4')['measured'])
+
+    def test_measurements_survive_a_failed_ai(self):
+        report_id = self.cad_project()
+        self.app.post('/api/key', json=dict(key='sk-test'))
+        self.gemini.replies.append((429, dict(error=dict(code=429, message='quota'))))
+        self.assertEqual(self.finish(report_id)['stage'], 'done')
+        report = self.app.get(f'/api/reports/{report_id}').json
+        self.assertEqual((report['ai_used'], report['ai_error']), (False, 'ai_busy'))
+        self.assertEqual(next(f for f in report['findings'] if f['rule'] == '1009.4')['status'], 'pass')
 
     def test_chat_with_a_key_remembers_the_conversation(self):
         report_id = self.app.post('/api/sample').json['id']
