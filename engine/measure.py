@@ -460,9 +460,19 @@ def worst(rows, key, pick=min):
     return pick(known, key=lambda r: r[key]) if known else None
 
 
+# The few words the measured values use, so each value reads in both languages.
+IN_ENGLISH = (('საბიჯელი', 'tread'), ('ფრთა', 'leaf'), ('დონეები', 'levels'), ('დონე', 'levels'), ('კიბე', 'stairs'), ('სმ', 'cm'), (' მ', ' m'))
+
+
+def english(found):
+    for ka, en in IN_ENGLISH:
+        found = found.replace(ka, en)
+    return found
+
+
 def result(rule, status, found, ka, en, row=None, mark=None, fix_ka='', fix_en=''):
     place_at = (row or {}).get('marks', {}).get(mark) or {}
-    return dict(rule_id=rule, status=status, found=found, explanation_ka=ka, explanation_en=en, fix_ka=fix_ka, fix_en=fix_en,
+    return dict(rule_id=rule, status=status, found_ka=found, found_en=english(found), explanation_ka=ka, explanation_en=en, fix_ka=fix_ka, fix_en=fix_en,
                 page=place_at.get('page') or (row or {}).get('page'), anchors=[], box=place_at.get('box'), measured=True)
 
 

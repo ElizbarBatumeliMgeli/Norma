@@ -6,23 +6,48 @@ amendment named by `source`. The model picks rules by id, so a clause number or 
 report always comes from this file, never from the model.
 
 Requirements here are a selection that can be checked on drawings, not the whole regulation.
+
+Each rule also names the disciplines whose drawings show it (`on`), the first being the section of the
+report it belongs to. A project is checked one discipline at a time: the fire protection drawings
+against the rules shown on fire drawings, and so on.
 """
 
 CATEGORIES = (
     # key, Georgian, English, chapters of the regulation
-    ('scope', 'დანიშნულება და სიმაღლე', 'Use & height', '1–3'),
-    ('egress', 'გასასვლელი საშუალებები', 'Means of egress', '10'),
+    ('scope', 'დანიშნულება და სიმაღლე', 'Use & height', '1–6'),
+    ('egress', 'გასასვლელი საშუალებები', 'Means of egress', '9, 10'),
     ('fire_systems', 'სახანძრო სისტემები', 'Fire protection systems', '4, 9'),
-    ('fire_resistance', 'ცეცხლმედეგობა', 'Fire resistance', '7, 10'),
+    ('fire_access', 'სახანძრო მისასვლელი და ტერიტორია', 'Fire access & site', '4, 9'),
+    ('fire_resistance', 'ცეცხლმედეგობა', 'Fire resistance', '4, 6, 7, 9, 10'),
     ('accessibility', 'მისაწვდომობა', 'Accessibility', '10, 11'),
-    ('interior', 'შიგა გარემო', 'Interior environment', '12'),
+    ('interior', 'შიგა გარემო', 'Interior environment', '4, 12'),
 )
 
+# The sections of a project, in the order they are checked and shown. Files marked "other"
+# (explanatory notes, site plans, mixed sets) are read with architecture.
+SECTIONS = (
+    # key, Georgian, English
+    ('architecture', 'არქიტექტურა', 'Architecture'),
+    ('structure', 'კონსტრუქცია', 'Structure'),
+    ('fire', 'ხანძარსაწინააღმდეგო დაცვა', 'Fire protection'),
+    ('plumbing', 'წყალი და კანალიზაცია', 'Water & sewage'),
+    ('hvac', 'გათბობა და ვენტილაცია', 'Heating & ventilation'),
+    ('electrical', 'ელექტროობა', 'Electrical'),
+    ('elv', 'სუსტი დენები', 'Low voltage (ELV)'),
+)
+SECTION_KEYS = tuple(s[0] for s in SECTIONS)
+
+# Where a category's rules are shown unless a rule says otherwise.
+SHOWN_ON = dict(scope=('architecture', 'fire'), egress=('architecture',), fire_systems=('fire',), fire_access=('fire', 'architecture'),
+                fire_resistance=('architecture', 'fire'), accessibility=('architecture',), interior=('architecture',))
+
 BASE = '2016'
+SUSPENDED = 'Sections 915–916 are suspended until 1 March 2027 for objects outside state fire supervision (Art. 23, №426 of 2026): mention this.'
 
 
-def rule(id, category, ka, en, req_ka, req_en, quote, source=BASE, check=''):
-    return dict(id=id, category=category, ka=ka, en=en, req_ka=req_ka, req_en=req_en, quote=quote, source=source, check=check)
+def rule(id, category, ka, en, req_ka, req_en, quote, source=BASE, check='', on=None):
+    return dict(id=id, category=category, ka=ka, en=en, req_ka=req_ka, req_en=req_en, quote=quote, source=source, check=check,
+                on=tuple(on or SHOWN_ON[category]))
 
 
 RULES = (
@@ -47,6 +72,12 @@ RULES = (
          'Occupant load is calculated from table 1004.1.2 (e.g. business areas: 9.3 m² gross per person).',
          'საქმიანობის წარმოების (ბიზნეს) ფართობები',
          check='Is the occupant load stated or can it be calculated from room areas? Exit widths depend on it.'),
+    rule('503.1', 'scope', 'შენობის სიმაღლე და ფართობი', 'Building height and area',
+         'სიმაღლე და ფართობი არ უნდა აღემატებოდეს 503-ე ცხრილის ზღვრებს კონსტრუქციის ტიპისა (602) და დაკავებულობის (302) მიხედვით. ცეცხლმედეგი კედლით გამიჯნული ნაწილი ცალკე შენობად ითვლება.',
+         'Height and area must not exceed the limits of table 503 for the construction type (602) and occupancy (302). A part separated by a fire wall counts as a separate building.',
+         'შენობის სიმაღლე და ფართობი არ უნდა აღემატებოდეს 503-ე ცხრილში 602-ე ქვეთავის საფუძველზე განსაზღვრული კონსტრუქციის ტიპისა',
+         check='Needs the construction type, storeys, height and floor areas. If the construction type is not stated anywhere, it is missing. Table 503 is not given here: judge only a clear case, otherwise verify.',
+         on=('architecture', 'structure')),
 
     # ---------- Means of egress ----------
     rule('1003.2', 'egress', 'ჭერის სიმაღლე გასასვლელზე', 'Ceiling height in egress',
@@ -77,6 +108,28 @@ RULES = (
          'გასასვლელ კიბეებზე მოხვევის საფეხურები დაუშვებელია (გამონაკლისი: საცხოვრებელი ერთეულის შიგნით).',
          'Winders are not allowed on egress stairs (except inside a dwelling unit).',
          'მოხვევის საფეხურები დაუშვებელია გასასვლელი საშუალებების გზა-კიბეებზე'),
+    rule('1009.8', 'egress', 'კიბის ბაქნები', 'Stair landings',
+         'კიბის თავსა და ბოლოში — იატაკი ან ბაქანი; ბაქნის სიგანე ≥ კიბის სიგანე; სწორ მარშზე ბაქნის სიღრმე საჭიროა არაუმეტეს 1,2 მ.',
+         'A floor or landing at the top and bottom of each stair; landing width ≥ stair width; on a straight run the depth need not exceed 1.2 m.',
+         'ბაქნის სიგანე არ უნდა იყოს იმ გზა-კიბის სიგანეზე ნაკლები, რომელსაც ის ემსახურება', source='№737 (2020)'),
+    rule('1009.10', 'egress', 'მარშის შვეული ამაღლება', 'Vertical rise of a flight',
+         'კიბის მარშის შვეული ამაღლება იატაკებსა ან ბაქნებს შორის ≤ 3,7 მ.', 'Vertical rise of a flight between floors or landings ≤ 3.7 m.',
+         'იატაკის დონეებსა ან ბაქნებს შორის კიბის მარშის შვეული ამაღლება არ უნდა აღემატებოდეს 3.7 მ-ს',
+         check='Check on sections: a flight that climbs a whole tall storey without a landing fails.'),
+    rule('1009.16', 'egress', 'სახურავზე ასასვლელი კიბე', 'Stair to the roof',
+         'მიწის დონიდან 4 და მეტსართულიან შენობაში ერთი კიბე სახურავამდე უნდა გაგრძელდეს, თუ სახურავის ქანობი ≤ 33%. დაუკავებელ სახურავზე დასაშვებია მონაცვლესაფეხურებიანი კიბე.',
+         'In buildings of four or more storeys above grade one stair must continue to the roof if its slope is ≤ 33%. An unoccupied roof may be reached by an alternating tread stair.',
+         'ერთი გზა-კიბე უნდა გაგრძელდეს სახურავის ზედაპირამდე',
+         check='Buildings under four storeys: not_applicable. Look at the top floor plan, roof plan and sections.'),
+    rule('1012.2', 'egress', 'სახელურის სიმაღლე', 'Handrail height',
+         'სახელური საფეხურის ნაშვერებიდან ან პანდუსის ზედაპირიდან 86 სმ – 1,0 მ სიმაღლეზე.', 'Handrails 86 cm to 1.0 m above stair nosings or the ramp surface.',
+         'არანაკლებ, 86 სმ და, არაუმეტეს, 1,0 მ სიმაღლეზე',
+         check='Usually only on stair sections and details.'),
+    rule('1013.3', 'egress', 'მოაჯირის სიმაღლე', 'Guard height',
+         'მოაჯირი ≥ 1,1 მ, სადაც სავალი ზედაპირის ღია მხარე 75 სმ-ზე მაღლაა ქვედა დონიდან (1013.2).',
+         'Guards ≥ 1.1 m high wherever the open side of a walking surface is more than 75 cm above the level below (1013.2).',
+         'აუცილებელი მოაჯირები უნდა იყოს, არანაკლებ, 1,1 მ სიმაღლის',
+         check='Balconies, stairs, landings, galleries and roof edges. Look at sections and railing details.'),
     rule('1010.3', 'egress', 'პანდუსის დახრა', 'Ramp slope',
          'გასასვლელი პანდუსის დახრა ≤ 1:12.', 'Egress ramp slope ≤ 1:12.',
          'დახრა არ უნდა აღემატებოდეს 1 შვეულ ერთეულს 12 თარაზულ ერთეულთან', source='№737 (2020)'),
@@ -86,7 +139,16 @@ RULES = (
     rule('1011.1', 'egress', 'გასასვლელის ნიშნები', 'Exit signs',
          'გასასვლელებსა და მათ კარებს უნდა ჰქონდეს გასასვლელის ნიშანი.', 'Exits and exit access doors must have exit signs.',
          'გასასვლელებსა და გასასვლელთან მისადგომის კარებს უნდა ჰქონდეს გასასვლელის აღმნიშვნელი ნიშანი',
-         check='Often shown on electrical or evacuation sheets: if those are not in the file, the status is unverifiable.'),
+         check='Shown on evacuation plans, fire sheets or emergency lighting plans.', on=('fire', 'electrical', 'architecture')),
+    rule('1006.2', 'egress', 'გასასვლელის განათებულობა', 'Egress illumination',
+         'გასასვლელი საშუალებების განათებულობა იატაკის დონეზე ≥ 11 ლუქსი.', 'Means of egress lit to at least 11 lux at the walking surface.',
+         'გასასვლელი საშუალებების განათებულობა სავალი ზედაპირის დონესთან 11 ლუქსზე ნაკლები არ უნდა იყოს',
+         check='Look for lighting levels in lighting plans or calculations; if none are stated, verify.', on=('electrical',)),
+    rule('1006.3', 'egress', 'ავარიული განათება', 'Emergency lighting',
+         'დენის გათიშვისას სათადარიგო სისტემამ ავტომატურად უნდა გაანათოს გასავლელები, დერეფნები, გასასვლელი კიბეები და პანდუსები, სადაც ორი ან მეტი გასასვლელია საჭირო: საშუალოდ 11 ლუქსი, ნებისმიერ წერტილში ≥ 1 ლუქსი (1006.3.1).',
+         'On power loss a standby system must light aisles, corridors, exit stairs and ramps where two or more exits are required: 11 lux average, at least 1 lux at any point (1006.3.1).',
+         'დენის გათიშვისას, სათადარიგო ელექტროსისტემამ ავტომატურად უნდა გაანათოს ქვემოთ ჩამოთვლილი ფართობები',
+         check='Look for emergency luminaires, their battery or generator supply, on lighting plans.', on=('electrical', 'fire')),
     rule('1015.1', 'egress', 'ორი გასასვლელი სივრციდან', 'Two exits from a space',
          'ორი გასასვლელია საჭირო, თუ დატვირთვა აღემატება: თვ, სქ, სგ, სმ, სვ, დს — 49; დწ-1, დწ-3, დწ-4, სც — 10; სწ — 29.',
          'Two exits are needed above these loads: თვ, სქ, სგ, სმ, სვ, დს 49; დწ-1, დწ-3, დწ-4, სც 10; სწ 29.',
@@ -103,7 +165,7 @@ RULES = (
          'საშხეფი სისტემის გარეშე / სისტემით: თვ, სგ, სმ-1, სვ, სც, სწ-1 — 60 / 75 მ; სქ — 60 / 90 მ; სმ-2, სწ-2, დს — 90 / 120 მ.',
          'Without / with sprinklers: თვ, სგ, სმ-1, სვ, სც, სწ-1 60 / 75 m; სქ 60 / 90 m; სმ-2, სწ-2, დს 90 / 120 m.',
          'წესების ცხრილი 1016.2 ჩამოყალიბდეს შემდეგი რედაქციით', source='№498 (2017)',
-         check='Other groups are in table 1016.2. Sections 402.8, 404.9, 407.4 and 1021.2 modify the distance.'),
+         check='Other groups are in table 1016.2. Sections 402.8, 404.9, 407.4 and 1021.2 modify the distance.', on=('architecture', 'fire')),
     rule('1018.2', 'egress', 'დერეფნის სიგანე', 'Corridor width',
          'დერეფანი ≥ 1,2 მ; დატვირთვა 50-ზე ნაკლები (გარდა სც-2 მრავალბინიანი სახლის საერთო დერეფნისა) და ბინის შიგნით — 90 სმ; სგ, დატვირთვა 100+ — 1,8 მ; დწ-2 საწოლებით — 2,4 მ.',
          'Corridor ≥ 1.2 m; load under 50 (except common corridors of სც-2 apartment buildings) and inside a dwelling 90 cm; სგ with load 100+ 1.8 m; დწ-2 with beds 2.4 m.',
@@ -112,19 +174,36 @@ RULES = (
          'ჩიხი ≤ 6,0 მ; ავტოსაშხეფი სისტემით (სქ, სგ, სმ, დწ-1, სვ, სც-1, სც-2, სც-4, დს) ≤ 15 მ; შეზღუდვა არ არის, თუ სიგრძე ≤ 2,5 × უმცირესი სიგანე.',
          'Dead end ≤ 6.0 m; with sprinklers (სქ, სგ, სმ, დწ-1, სვ, სც-1, სც-2, სც-4, დს) ≤ 15 m; no limit if length ≤ 2.5 × least width.',
          'დერეფნებში არ შეიქმნას 6,0 მ-ზე გრძელი ჩიხები', source='№87 (2022)'),
+    rule('1018.5', 'egress', 'დერეფანი ჰაერსატარად', 'Corridors used as air ducts',
+         'დერეფანი არ უნდა იყოს ჰაერის მიწოდების, რეცირკულაციის, გამწოვი ან სანიავებელი არხი.', 'A corridor must not serve as a supply, return, exhaust or ventilation air duct.',
+         'დერეფნები არ უნდა ასრულებდეს ჰაერის მიწოდების, რეცირკულირების, გამწოვი, გამშვები ან სანიავებელი არხების ფუნქციას',
+         check='Look for return or transfer air through corridors on ventilation plans.', on=('hvac',)),
     rule('1021.2', 'egress', 'გასასვლელების რაოდენობა სართულზე', 'Exits per storey',
          'სართულს სჭირდება ორი გასასვლელი, თუ არ არის დაცული ცხრილები 1021.2(1)/(2). სც-2: ერთი გასასვლელი მხოლოდ მე-8 სართულის ჩათვლით, არამაღლივ შენობაში, ≤ 400 მ², ≤ 5 ბინა, ≤ 38 მ.',
          'A storey needs two exits unless tables 1021.2(1)/(2) allow one. სც-2: one exit only up to the 8th storey, not high-rise, ≤ 400 m², ≤ 5 units, ≤ 38 m.',
-         'ნებისმიერ სართულს ან დაკავებულ სახურავს უნდა ემსახურებოდეს ორი გასასვლელი ან გასასვლელთან მისადგომის გზა-კიბე, ან პანდუსი', source='№444 (2025)'),
+         'ნებისმიერ სართულს ან დაკავებულ სახურავს უნდა ემსახურებოდეს ორი გასასვლელი ან გასასვლელთან მისადგომის გზა-კიბე, ან პანდუსი', source='№444 (2025)',
+         on=('architecture', 'fire')),
     rule('1027.1', 'egress', 'გასვლა შენობიდან', 'Exit discharge',
          'გასასვლელები პირდაპირ შენობის გარეთ უნდა გადიოდეს.', 'Exits must discharge directly outside the building.',
          'გასასვლელები უნდა გადიოდეს პირდაპირ შენობის გარეთ',
          check='The clause has exceptions, e.g. discharge through a lobby.'),
+    rule('1029.1', 'egress', 'საავარიო გასაღწევი ღიობი', 'Emergency escape openings',
+         'სც-2 (ცხრილების 1021.2(1)/(2) შესაბამისად) და სც-3: მიწის დონის ქვედა სართულებს და მეოთხე სართულს ქვემოთ საძინებლებს სულ მცირე ერთი საავარიო გასაღწევი და სამაშველო ღიობი სჭირდება (≥ 0,53 მ², 1029.2).',
+         'სც-2 (under tables 1021.2(1)/(2)) and სც-3: basements and sleeping rooms below the fourth storey need at least one emergency escape and rescue opening (≥ 0.53 m², 1029.2).',
+         'ამ თავის მიხედვით აუცილებელ გასასვლელ საშუალებებთან ერთად უნდა მოეწყოს საავარიო გასაღწევები და სამაშველო ღიობები',
+         check='Groups სც-2 and სც-3 only; otherwise not_applicable. Exceptions: a room with a door straight outside; basements under 2 m high; non-habitable basements of 19 m² or less.'),
     rule('403.5.1', 'egress', 'კიბეების დაშორება მაღლივში', 'High-rise stair separation',
-         'მაღლივში გასასვლელი კიბეები ≥ 9,0 მ-ით ან დიაგონალის ¼-ით უნდა დაშორდეს (რომელიც ნაკლებია). მაკრატელა კიბე ერთ კიბედ ითვლება.',
-         'In high-rises exit stairs must be at least 9.0 m or ¼ of the diagonal apart, whichever is less. A scissor stair counts as one stair.',
-         'უნდა გაიმიჯნოს არანაკლებ 9,0 მეტრით ან შენობის ან ფართობის საერთო დიაგონალის მაქსიმალური სიგრძის არანაკლებ მეოთხედით', source='№498 (2017)',
-         check='High-rise buildings only; otherwise not_applicable.'),
+         'მაღლივში გასასვლელი კიბეები ≥ 9,0 მ-ით ან დიაგონალის ¼-ით უნდა დაშორდეს (რომელიც ნაკლებია). სამი ან მეტი კიბისას — სულ მცირე ორი. მაკრატელა კიბე ერთ კიბედ ითვლება.',
+         'In high-rises exit stairs must be at least 9.0 m or ¼ of the diagonal apart, whichever is less. With three or more stairs, at least two. A scissor stair counts as one stair.',
+         'შენობის ან ფართობის საერთო დიაგონალის მაქსიმალური სიგრძის, არანაკლებ, მეოთხედით, რომელიც ნაკლები იქნება', source='№737 (2020)',
+         check='High-rise buildings only; otherwise not_applicable. №737 (2020) removed the earlier exception for სქ office buildings.',
+         on=('architecture', 'fire')),
+    rule('909.20.1', 'egress', 'კვამლგაუმტარი კიბის ვესტიბიული', 'Smokeproof stair vestibule',
+         'ვესტიბიულის სიგანე ≥ მასში შემავალი დერეფნის სიგანე და ≥ 1,1 მ; სიგრძე სავალი მიმართულებით ≥ 1,8 მ. კიბესთან მისვლა ვესტიბიულიდან ან გარე ღია აივნიდან.',
+         'Vestibule width ≥ the corridor leading to it and ≥ 1.1 m; length in the direction of travel ≥ 1.8 m. The stair is reached through a vestibule or an open exterior balcony.',
+         'ვესტიბიულის მინიმალური ზომა არ უნდა იყოს ვესტიბიულში შემავალი დერეფნის სიგანეზე ნაკლები, მაგრამ არც 1,1 მ-ზე ნაკლები',
+         check='Only where a smokeproof enclosure is required (403.5.4) and is made with a vestibule; with stair pressurization instead (909.20.5) or otherwise, not_applicable.',
+         on=('architecture', 'fire')),
 
     # ---------- Fire protection systems ----------
     rule('903.2.8', 'fire_systems', 'ავტოსაშხეფი სისტემა — სც ჯგუფი', 'Sprinklers — group სც',
@@ -140,12 +219,50 @@ RULES = (
     rule('403.4.3', 'fire_systems', 'სახანძრო მილდგარები — მაღლივი', 'Standpipes — high-rise',
          'მაღლივი შენობა სახანძრო მილდგარების სისტემით უნდა აღიჭურვოს.', 'High-rise buildings must have a standpipe system.',
          'მაღლივი შენობა უნდა აღიჭურვოს 905.3 ქვეთავის მოთხოვნების შესაბამისი სახანძრო მილდგარების სისტემით',
-         check='High-rise only; otherwise not_applicable.'),
+         check='High-rise only; otherwise not_applicable.', on=('fire', 'plumbing')),
     rule('403.4.5', 'fire_systems', 'ხანძრის საკონტროლო ცენტრი', 'Fire command centre',
          'მაღლივში ხანძრის საკონტროლო ცენტრი უნდა მოეწყოს; ადგილი თანხმდება სახანძრო დანაყოფთან.',
          'High-rises need a fire command centre; its location is agreed with the fire service.',
          'ხანძრის საკონტროლო ცენტრის განთავსების ადგილი თანხმდება სახანძრო-სამაშველო დანაყოფთან',
-         check='High-rise only; otherwise not_applicable.'),
+         check='High-rise only; otherwise not_applicable.', on=('fire', 'architecture')),
+    rule('911.1.3', 'fire_systems', 'ხანძრის საკონტროლო ცენტრის ზომა', 'Fire command centre size',
+         'ხანძრის საკონტროლო ცენტრის ოთახი ≥ 19 მ², უმცირესი ზომა ≥ 3,0 მ.', 'The fire command centre room is ≥ 19 m², with no side under 3.0 m.',
+         'ოთახის ფართობი უნდა იყოს, სულ მცირე, 19 მ', source='№498 (2017)',
+         check='Only where a fire command centre is required (403.4.5); otherwise not_applicable.', on=('fire', 'architecture')),
+    rule('903.2.11.3', 'fire_systems', 'ავტოსაშხეფი — 16,8 მ და მაღლა', 'Sprinklers — floors at 16.8 m and up',
+         'ავტოსაშხეფი სისტემა საჭიროა, თუ სახანძრო მანქანის მისადგომიდან 16,8 მ-ზე ან მაღლა მდებარე სართულის დაკავებულობის დატვირთვა ≥ 30.',
+         'Sprinklers are required where a floor 16.8 m or more above fire-vehicle access has an occupant load of 30 or more.',
+         'ავტოსაშხეფი სისტემა უნდა დააყენონ შენობებში, სადაც სახანძრო განყოფილების ავტომობილის მისადგომიდან 16,8 მ-ზე ან 16,8 მ-ზე მაღლა მდებარე იატაკის დონის დაკავებულობის დატვირთვა 30 ან 30-ზე მეტია',
+         check='For სც-2 apartment buildings the specific exceptions of 903.2.8 (№131 of 2023) may decide it: then use verify and name them.'),
+    rule('903.2.10', 'fire_systems', 'ავტოსაშხეფი — დახურული ავტოსადგომი', 'Sprinklers — enclosed parking',
+         'სწ-2 დახურული ავტოსადგომი მთლიანად ავტოსაშხეფით, თუ ხანძრისგან დაცული ფართობი > 1200 მ² ან ავტოსადგომი სხვა ჯგუფის ქვემოთაა (გამონაკლისი: სც-3-ის ქვეშ).',
+         'Enclosed სწ-2 parking fully sprinklered if a fire area exceeds 1200 m² or the parking is below another occupancy (except below სც-3).',
+         'ავტოსაშხეფი სისტემით უზრუნველყოფილი უნდა იყოს მთელი შენობა, რომელიც მიეკუთვნება შემოზღუდული ავტოსადგომი გარაჟების კლასს', source='№498 (2017)',
+         check='Only if there is enclosed parking; otherwise not_applicable.'),
+    rule('905.3.1', 'fire_systems', 'სახანძრო მილდგარები — სიმაღლე', 'Standpipes — building height',
+         'III კლასის სახანძრო მილდგარები მთელ შენობაში, თუ ზედა სართულის იატაკი სახანძრო მანქანის მისადგომიდან 9,0 მ-ზე მაღლაა, ან ქვედა სართული 9,0 მ-ზე დაბლა.',
+         'Class III standpipes throughout if the top floor is more than 9.0 m above fire-vehicle access, or the lowest floor more than 9.0 m below it.',
+         'III კლასის სახანძრო მილდგარების სისტემები უნდა დააყენონ მთელ შენობაში, თუ ყველაზე მაღალი სართულის იატაკის დონე 9,0 მ-ით ზემოთაა',
+         check='The clause may have exceptions: name one if it decides the result.', on=('fire', 'plumbing')),
+    rule('905.4', 'fire_systems', 'მილდგარის მისაერთებლების მდებარეობა', 'Standpipe hose connections',
+         'I კლასის სახელოს მისაერთებელი ყველა აუცილებელ კიბეში ყოველ სართულზე (შუალედურ ბაქანზე, თუ სხვაგვარად არ არის შეთანხმებული), თარაზული გასასვლელის ორივე მხარეს და გასასვლელის გზა-დერეფნებში.',
+         'Class I hose connections in every required stair at each floor level (at the intermediate landing unless agreed otherwise), on both sides of horizontal exits, and in exit passageways.',
+         'ყველა აუცილებელ გზა-კიბეზე სახელოს მისაერთებელი უნდა მდებარეობდეს მიწის დონის ზემოთ ან ქვემოთ ყოველი იატაკის დონეზე',
+         check='Only where a standpipe system is required or provided; otherwise not_applicable.', on=('fire', 'plumbing')),
+    rule('912.2', 'fire_systems', 'სახანძრო მისაერთებლები', 'Fire department connections',
+         'სახანძრო დანაყოფის მისაერთებლები ისე, რომ მიერთებულმა აპარატურამ შენობასთან მისასვლელი არ ჩახერგოს; მდებარეობა თანხმდება სახანძრო-სამაშველო დანაყოფთან.',
+         'Fire department connections placed so that connected equipment does not block access to the building; their location is agreed with the fire service.',
+         'სახანძრო მისაერთებლების მდებარეობა შეთანხმებული უნდა იყოს სახანძრო-სამაშველო დანაყოფთან',
+         check='Only where sprinklers or standpipes need one; otherwise not_applicable. Usually on the site plan or the fire water riser diagram.', on=('fire', 'plumbing')),
+    rule('907.2.1', 'fire_systems', 'სახანძრო განგაში — თვ', 'Fire alarm — group თვ',
+         'თვ: ხელით სამართავი სახანძრო განგაში, თუ დაკავებულობის დატვირთვა ≥ 300.', 'თვ: a manual fire alarm system where the occupant load is 300 or more.',
+         'უნდა მოეწყოს თვ ჯგუფის დაკავებულობებში, სადაც თავშეყრის დაკავებულობის მიხედვით, დაკავებულობის დატვირთვა 300 ან მეტია',
+         check='Group თვ only; otherwise not_applicable.', on=('fire', 'elv')),
+    rule('907.2.2', 'fire_systems', 'სახანძრო განგაში — სქ', 'Fire alarm — group სქ',
+         'სქ: ხელით სამართავი სახანძრო განგაში, თუ ყველა სართულის ჯამური დატვირთვა ≥ 500, ან > 100 გამოსასვლელის დონის ზემოთ ან ქვემოთ.',
+         'სქ: a manual fire alarm system where the total load of all floors is 500 or more, or more than 100 above or below the exit discharge level.',
+         'სქ ჯგუფის ყველა იატაკის დაკავებულობის საერთო დატვირთვა შეადგენს 500 კაცს ან მეტს',
+         check='Group სქ only; otherwise not_applicable.', on=('fire', 'elv')),
     rule('906.1', 'fire_systems', 'ხელის ცეცხლმაქრები', 'Portable fire extinguishers',
          'ხელის ცეცხლმაქრები საჭიროა თვ, სქ, სგ, სმ, დსშ, დწ, სვ, სც-1, სც-2, სც-4 და სწ ჯგუფებში.',
          'Portable extinguishers are required in groups თვ, სქ, სგ, სმ, დსშ, დწ, სვ, სც-1, სც-2, სც-4 and სწ.',
@@ -155,12 +272,69 @@ RULES = (
          'სც-2: განგაშის ხელით სამართავი სისტემა, თუ ერთეული ≥ 3 სართულით მაღლაა გამოსასვლელიდან, 1 სართულით დაბლაა, ან შენობაში 16-ზე მეტი ერთეულია.',
          'სც-2: manual alarm if a unit is 3+ storeys above the exit level, one storey below it, or there are more than 16 units.',
          'შენობა მოიცავს 16-ზე მეტ საცხოვრებელ ან საძინებელ ერთეულს',
-         check='Group სც-2 only; otherwise not_applicable. The clause has exceptions.'),
-    rule('915.12', 'fire_systems', 'სახანძრო ავტოკიბის გზა', 'Fire ladder access road',
+         check='Group სც-2 only; otherwise not_applicable. The clause has exceptions.', on=('fire', 'elv')),
+    rule('907.2.13', 'fire_systems', 'აღმომჩენი და ხმოვანი განგაში — მაღლივი', 'Detection and voice alarm — high-rise',
+         'მაღლივში: კვამლის ავტომატური აღმომჩენი სისტემა, სახანძრო დანაყოფთან კავშირის სისტემა და საგანგებო ხმოვანი განგაშის საკომუნიკაციო სისტემა (907.5.2.2).',
+         'High-rises need automatic smoke detection, a fire department communication system and an emergency voice/alarm communication system (907.5.2.2).',
+         'მაღლივ შენობებში კვამლის ავტომატური აღმომჩენი სისტემა უზრუნველყოფილი უნდა იყოს',
+         check='High-rise only; otherwise not_applicable.', on=('fire', 'elv')),
+    rule('403.5.4', 'fire_systems', 'კვამლგაუმტარი კიბეები — მაღლივი', 'Smokeproof exit stairs — high-rise',
+         'სახანძრო მანქანის მისადგომიდან 23 მ-ზე მაღლა მდებარე სართულების მომსახურე ყოველი გასასვლელი კიბე კვამლგაუმტარი (ვესტიბიულით ან ღია აივნით) ან დაწნევადი უნდა იყოს (909.20, 1022.10).',
+         'Every exit stair serving floors more than 23 m above fire-vehicle access must be a smokeproof enclosure (vestibule or open balcony) or pressurized (909.20, 1022.10).',
+         'სახანძრო მანქანის მისადგომის ყველაზე დაბალი დონიდან 23 მ-ის ზევით მდებარე სართულების მომსახურე თითოეული აუცილებელი გასასვლელის გზა-კიბე 909.20 და 1022.10 ქვეთავებს უნდა შეესაბამებოდეს',
+         check='High-rise only; otherwise not_applicable. Vestibules show on architectural plans, pressurization fans and ducts on HVAC plans.',
+         on=('fire', 'hvac', 'architecture')),
+    rule('909.20.5', 'fire_systems', 'კიბის დაწნევა', 'Stair pressurization',
+         'სრულად დაშხეფებულ შენობაში ვესტიბიული საჭირო არ არის, თუ კიბეში ყველა კარის დახურვისას 25–87 პა წნევა იქმნება.',
+         'In a fully sprinklered building no vestibule is needed if the stair is pressurized to 25–87 Pa with all its doors closed.',
+         'სულ მცირე, 25 პა და, არაუმეტეს, 87 პა წნევა გზა-კიბის ყველა კარის დახურვისას',
+         check='Only where pressurization is used for a smokeproof stair; otherwise not_applicable.', on=('hvac', 'fire')),
+    rule('403.6.1', 'fire_systems', 'სახანძრო-სამაშველო ლიფტები', 'Fire service access elevators',
+         'თუ დაკავებული იატაკი სახანძრო მანქანის მისადგომიდან 37 მ-ზე მაღლაა: სულ მცირე ორი სახანძრო-სამაშველო ლიფტი, თითოეული ≥ 1600 კგ.',
+         'If an occupied floor is more than 37 m above fire-vehicle access: at least two fire service access elevators, each ≥ 1600 kg.',
+         'უნდა არსებობდეს სახანძრო-სამაშველო დანაყოფისთვის მისადგომი არანაკლებ ორი ლიფტისა', source='№498 (2017)',
+         check='Only above 37 m; otherwise not_applicable.', on=('fire', 'architecture')),
+    rule('403.4.8', 'fire_systems', 'საავარიო ელექტრომომარაგება — მაღლივი', 'Emergency power — high-rise',
+         'მაღლივში სათადარიგო ელექტრომომარაგება საავარიო დატვირთვებისთვის: გასასვლელის ნიშნები და განათება, ლიფტის კაბინის განათება, ხმოვანი განგაში, აღმომჩენები, სახანძრო განგაში, ელექტრო სახანძრო ტუმბოები (403.4.8.1).',
+         'High-rises need standby power for the emergency loads: exit signs and egress lighting, elevator car lighting, voice alarm, detection, fire alarm and electric fire pumps (403.4.8.1).',
+         '403.4.8.1 ქვეთავში განსაზღვრული საავარიო ელექტროდატვირთვისთვის უზრუნველყოფილი უნდა იყოს სათადარიგო ელექტრომომარაგების სისტემა', source='№180 (2019)',
+         check='High-rise only; otherwise not_applicable. Look for a generator or second supply on the single-line diagram.', on=('electrical', 'fire')),
+
+    # ---------- Fire access & site ----------
+    rule('915.7', 'fire_access', 'მისასვლელი გზა — 10 მ-მდე', 'Fire access road — up to 10 m',
+         'სც, თვ, სვ, სქ, სმ, სწ, დს, სახანძრო-ტექნიკური სიმაღლე ≤ 10 მ: გზა მთავარ შესასვლელამდე ≤ 15 მ; პირველი სართულის გარე კედლის ნებისმიერი ნაწილი გზიდან ≤ 45 მ.',
+         'სც, თვ, სვ, სქ, სმ, სწ, დს with fire-technical height ≤ 10 m: road within 15 m of the main entrance, and every part of the ground floor outer wall within 45 m of it.',
+         'სახანძრო და საავარიო-სამაშველო ტექნიკის მისასვლელი გზა უნდა მიდიოდეს შენობის მთავარ შესასვლელ კარამდე არა უმეტეს 15 მეტრის დაშორებით', source='№508 (2022)',
+         check=f'Buildings up to 10 m fire-technical height (915.3: from the lowest access road level to the highest occupied floor); otherwise not_applicable. Needs a site plan. {SUSPENDED}'),
+    rule('915.8', 'fire_access', 'ავტოკიბის გზის დაშორება', 'Ladder road distance from the building',
+         'სახანძრო-ტექნიკური სიმაღლე > 10 მ და ≤ 30 მ: გზის კიდიდან შენობამდე 4,5–9 მ; ≥ 30 მ: 9–12 მ.',
+         'Fire-technical height over 10 m up to 30 m: 4.5–9 m from the road edge to the building; 30 m or more: 9–12 m.',
+         'დაცილებული უნდა იყოს არანაკლებ 4.5 მეტრისა და არა უმეტეს 9 მეტრის მანძილით', source='№508 (2022)',
+         check=f'Buildings over 10 m fire-technical height; otherwise not_applicable. Needs a site plan. {SUSPENDED}'),
+    rule('915.9', 'fire_access', 'ავტოკიბის თავისუფალი სივრცე', 'Clear space for fire ladders',
+         'სახანძრო-ტექნიკური სიმაღლე > 10 მ: შენობის ნაწილებთან მისაწვდომი თავისუფალი სივრცე სიგანით ≥ 8 მ.',
+         'Fire-technical height over 10 m: a clear space at least 8 m wide giving the ladders access to the building.',
+         'რომლის თავისუფალი სიგანე უნდა იყოს, სულ მცირე, 8 მეტრი', source='№508 (2022)',
+         check=f'Buildings over 10 m fire-technical height; otherwise not_applicable. {SUSPENDED}'),
+    rule('915.12', 'fire_access', 'სახანძრო ავტოკიბის გზა', 'Fire ladder access road',
          'სც-2, სახანძრო-ტექნიკური სიმაღლე > 30 მ: გზა ღიობების მქონე ფასადის მხრიდან, მთელ სიგრძეზე. სც, თვ, სვ, სქ, დწ, დს, > 23 მ: სულ მცირე ორი მხრიდან.',
          'სც-2 over 30 m fire-technical height: road along the full façade with openings. სც, თვ, სვ, სქ, დწ, დს over 23 m: on at least two sides.',
          'რომელთა სახანძრო-ტექნიკური სიმაღლე 30 მეტრზე მაღლაა, გზა უნდა მოეწყოს ღიობების მქონე ფასადის მხრიდან შენობის მთელ სიგრძეზე', source='№444 (2025)',
-         check='Needs a site plan. Sections 915–916 are suspended until 1 March 2027 for objects outside state fire supervision (Art. 23, №426 of 2026): mention this.'),
+         check=f'Needs a site plan. {SUSPENDED}'),
+    rule('915.23', 'fire_access', 'ჩიხური მისასვლელი გზა', 'Dead-end access roads',
+         'სახანძრო ტექნიკის მისადგომ ჩიხურ გზას, 45 მ-ზე გრძელს, მოსაბრუნებელი მოედანი სჭირდება.', 'A dead-end fire access road longer than 45 m needs a turnaround.',
+         'რომელთა სიგრძე აღემატება 45 მეტრს', source='№508 (2022)',
+         check=f'Only if the access road is a dead end; otherwise not_applicable. {SUSPENDED}'),
+    rule('916.2', 'fire_access', 'სამაშველო კაბინის მოედანი', 'Rescue cabin platform',
+         '75 მ-ზე მაღალი შენობის სახურავზე — სულ მცირე ერთი მოედანი სამაშველო კაბინისთვის, ≥ 5 × 5 მ, სახურავის შუა ნაწილში, ≥ 25 კნ დატვირთვაზე (916.3).',
+         'Buildings over 75 m need at least one rescue cabin platform on the roof, ≥ 5 × 5 m, in the middle of the roof, for ≥ 25 kN (916.3).',
+         '75 მეტრზე მაღალი შენობის სახურავზე, ადამიანთა ევაკუაციის მიზნით, უნდა მოეწყოს', source='№508 (2022)',
+         check=f'Buildings over 75 m only; otherwise not_applicable. {SUSPENDED}', on=('fire', 'architecture', 'structure')),
+    rule('423.1', 'fire_access', 'უსაფრთხო ადგილები — სგ', 'Safe areas — group სგ',
+         'სგ: ყოველ დამკავებელზე ≥ 0,56 მ² უსაფრთხო ადგილი შენობასა და ნაკვეთის საზღვარს შორის, შენობიდან მისი სიმაღლის ნახევრით, მაგრამ ≥ 15 მ.',
+         'სგ: at least 0.56 m² of safe area per occupant between the building and the lot line, at half the building height from it but at least 15 m.',
+         'საგანმანათლებლო ჯგუფის დაკავებულობების თითოეული დამკავებელი უზრუნველყოფილი უნდა იყოს, სულ მცირე, 0,56 მ2 ფართობის უსაფრთხო ადგილით', source='№262 (2026)',
+         check='Group სგ only; otherwise not_applicable. Exception for reconstructing an existing kindergarten or school. Needs a site plan.', on=('architecture', 'fire')),
 
     # ---------- Fire resistance ----------
     rule('1022.2', 'fire_resistance', 'კიბის უჯრედის შემოზღუდვა', 'Stair enclosure rating',
@@ -173,6 +347,45 @@ RULES = (
          'Without / with sprinklers: თვ, სქ, სგ, სმ, სვ, სწ, დს (load > 30) 1 h / 0; სც (> 10) 1 h / 0.5 h.',
          'დერეფნების ცეცხლმედეგობის ხარისხი', source='№498 (2017)',
          check='Other groups are in table 1018.1. Usually only stated in notes or wall legends.'),
+    rule('1018.6', 'fire_resistance', 'დერეფნის უწყვეტობა', 'Corridor continuity',
+         'ცეცხლმედეგი დერეფანი უწყვეტი უნდა იყოს შესასვლელიდან გასასვლელამდე და მას არ უნდა კვეთდეს შუალედური ოთახები. დერეფნის მოთხოვნებით აგებული ფოიე, ვესტიბიული ან მიმღები შუალედურ ოთახად არ ითვლება.',
+         'A fire-rated corridor must be continuous from its entrance to the exit, with no intervening rooms. A foyer, vestibule or reception area built to corridor requirements is not an intervening room.',
+         'ცეცხლმედეგობის ხარისხიანი დერეფნები უწყვეტი უნდა იყოს მასში შესასვლელიდან გასასვლელამდე და მას არ უნდა კვეთდეს შუალედური ოთახები', source='№120 (2025)',
+         check='Only where 1018.1 requires a rated corridor.', on=('architecture',)),
+    rule('1022.4', 'fire_resistance', 'კიბის უჯრედის კარები', 'Stair enclosure doors',
+         'გასასვლელი კიბის უჯრედის ღიობები (კარები) ცეცხლმედეგი უნდა იყოს, 716-ე ქვეთავის შესაბამისად.', 'Openings in exit stair enclosures (doors) must be fire-rated per section 716.',
+         'შიგა გასასვლელის გზა-კიბეებისა და პანდუსების ღიობის დამცავები უნდა აკმაყოფილებდეს 716-ე ქვეთავის მოთხოვნებს',
+         check='Look for door ratings (e.g. EI 60) in door schedules, legends or plan tags.'),
+    rule('713.4', 'fire_resistance', 'შახტის ცეცხლმედეგობა', 'Shaft enclosure rating',
+         'შახტის შემოზღუდვა ≥ 2 სთ, თუ აერთებს 4 ან მეტ სართულს; ≥ 1 სთ — 4-ზე ნაკლებს. მიწისქვეშა სართულები ითვლება, ანტრესოლი — არა.',
+         'Shaft enclosures ≥ 2 h if connecting four or more storeys, ≥ 1 h if fewer. Basements count, mezzanines do not.',
+         'შახტის შემომზღუდავების ცეცხლმედეგობის ხარისხი, არანაკლებ, 2 საათი უნდა იყოს, თუ ისინი აკავშირებს ოთხ ან მეტ სართულს',
+         check='Elevator, duct and riser shafts. Look for wall ratings in legends or notes.', on=('architecture', 'structure')),
+    rule('717.5.3', 'fire_resistance', 'ფარსაკეტები შახტში', 'Fire and smoke dampers in shafts',
+         'შახტის შემოზღუდვაში გამავალი არხები და ღიობები ცეცხლისა და კვამლის ფარსაკეტებით უნდა იყოს დაცული.', 'Ducts and air openings through shaft enclosures must be protected by fire and smoke dampers.',
+         'ნუსხის პირობების მიხედვით დაყენებული ცეცხლისა და კვამლის ფარსაკეტებით უნდა იყოს დაცული',
+         check='The clause has exceptions. Look at duct risers and damper symbols on HVAC plans.', on=('hvac', 'fire')),
+    rule('420.2', 'fire_resistance', 'ბინებს შორის კედლები', 'Walls between dwelling units',
+         'საცხოვრებელ ან საძინებელ ერთეულებს შორის, და მათსა და სხვა დაკავებულობას შორის — ცეცხლმედეგი ტიხრები (708).',
+         'Walls between dwelling or sleeping units, and between them and other occupancies, are fire partitions (708).',
+         'უნდა აიგოს, როგორც 708-ე ქვეთავის შესაბამისი ცეცხლმედეგი ტიხრები', source='№180 (2019)',
+         check='Dwelling and sleeping units only (section 420); otherwise not_applicable.', on=('architecture',)),
+    rule('420.3', 'fire_resistance', 'ბინებს შორის გადახურვები', 'Floors between dwelling units',
+         'საცხოვრებელ ან საძინებელ ერთეულებს შორის, და მათსა და სხვა დაკავებულობას შორის, იატაკი — თარაზული ანაწყობი (711).',
+         'Floors between dwelling or sleeping units, and between them and other occupancies, are horizontal assemblies (711).',
+         'უნდა აიგოს, როგორც 711-ე ქვეთავის შესაბამისი თარაზული ანაწყობები',
+         check='Dwelling and sleeping units only (section 420); otherwise not_applicable.', on=('structure', 'architecture')),
+    rule('602.1', 'fire_resistance', 'კონსტრუქციის ტიპი და ცეცხლმედეგობა', 'Construction type and element ratings',
+         'შენობა ხუთი კონსტრუქციული ტიპიდან ერთ-ერთს მიეკუთვნება; ელემენტების ცეცხლმედეგობა ≥ ცხრილი 601. ძირითადი მზიდი ჩარჩო: I-A 3 სთ, I-B 2 სთ, II-A, III-A, V-A 1 სთ, II-B, III-B, V-B 0.',
+         'The building is one of five construction types; element ratings ≥ table 601. Primary structural frame: I-A 3 h, I-B 2 h, II-A, III-A, V-A 1 h, II-B, III-B, V-B 0.',
+         'შენობის ნაწილების ცეცხლმედეგობის ხარისხი 601-ე ცხრილში განსაზღვრულზე ნაკლები არ უნდა იყოს',
+         check='The type is usually in the structural or architectural general notes. Ratings of columns, beams and slabs may be given directly or as concrete cover. 403.2.1 allows reductions in sprinklered high-rises.',
+         on=('structure', 'architecture')),
+    rule('913.2.1', 'fire_resistance', 'სახანძრო ტუმბოს ოთახი', 'Fire pump room',
+         'სახანძრო ტუმბოს ოთახი სხვა ფართობებისგან 2-საათიანი ცეცხლმედეგი ზღუდეებით ან თარაზული ანაწყობებით გამიჯნული.',
+         'The fire pump room is separated from the rest of the building by 2-hour fire barriers or horizontal assemblies.',
+         'სახანძრო ტუმბოები უნდა განთავსდეს ოთახებში, რომლებიც შენობის ყველა სხვა ფართობისგან გამიჯნულია 2-საათიანი ცეცხლმედეგი ზღუდეებით',
+         check='Only if there is a fire pump; otherwise not_applicable.', on=('fire', 'plumbing', 'architecture')),
 
     # ---------- Accessibility ----------
     rule('1105.1', 'accessibility', 'მისაწვდომი შესასვლელები', 'Accessible entrances',
@@ -220,18 +433,41 @@ RULES = (
          'Each dwelling has one room ≥ 14.0 m²; other habitable rooms ≥ 7.0 m². For studios see 1208.4.',
          'ყველა საცხოვრებელ ერთეულს უნდა ჰქონდეს, არანაკლებ, 14,0 მ2 ფართობის ერთი ოთახი მაინც',
          check='Dwellings only; otherwise not_applicable.'),
+    rule('1203.4.1', 'interior', 'ბუნებრივი განიავება', 'Natural ventilation',
+         'გასაღები გარე ღიობი ≥ გასანიავებელი იატაკის ფართობის 4%, ან მექანიკური განიავება (1203.1).',
+         'Openable exterior openings ≥ 4% of the ventilated floor area, or mechanical ventilation (1203.1).',
+         'გარე გასაღები ღიობის მინიმალური ფართობი გაღებულ მდგომარეობაში უნდა იყოს გასანიავებელი იატაკის ფართობის 4%',
+         check='Rooms without openable windows need mechanical ventilation on the HVAC plans.', on=('hvac', 'architecture')),
+    rule('406.6.2', 'interior', 'დახურული ავტოსადგომის განიავება', 'Enclosed parking ventilation',
+         'დახურულ ავტოსადგომს მექანიკური განიავების სისტემა სჭირდება.', 'Enclosed parking garages need a mechanical ventilation system.',
+         'შემოზღუდული ავტოსადგომი გარაჟები უზრუნველყოფილი უნდა იყოს მექანიკური განიავების სისტემით',
+         check='Only if there is enclosed parking; otherwise not_applicable.', on=('hvac',)),
 )
 
 BY_ID = {r['id']: r for r in RULES}
 CATEGORY_KEYS = tuple(c[0] for c in CATEGORIES)
 
 
-def prompt_text():
-    """The rulebook as the model reads it. Stable text, so it stays in the prompt cache."""
+def rules_for(discipline=None):
+    """The rules a discipline's drawings can show; all of them when `discipline` is None."""
+    return [r for r in RULES if discipline is None or discipline in r['on']]
+
+
+def section_of(rule):
+    """The report section a rule belongs to: the first discipline that shows it."""
+    return rule['on'][0]
+
+
+def prompt_text(rules=RULES):
+    """The rulebook as the model reads it, all of it or the rules given. Stable text, so it stays in the prompt cache."""
+    chosen = {r['id'] for r in rules}
     lines = []
     for key, _, en, chapters in CATEGORIES:
+        rules = [r for r in RULES if r['category'] == key and r['id'] in chosen]
+        if not rules:
+            continue
         lines.append(f'\n## {en} (chapters {chapters})')
-        for r in (r for r in RULES if r['category'] == key):
+        for r in rules:
             note = f' Check: {r["check"]}' if r['check'] else ''
             lines.append(f'- [{r["id"]}] {r["en"]}: {r["req_en"]}{note}')
     return '\n'.join(lines).strip()

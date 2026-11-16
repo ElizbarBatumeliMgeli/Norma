@@ -4,7 +4,7 @@ import json
 import re
 import unittest
 
-from rulebook import BASE, CATEGORY_KEYS, RULES
+from rulebook import BASE, CATEGORY_KEYS, RULES, SECTION_KEYS, rules_for
 
 DATA = Path(__file__).parent / 'data' / 'regulation'
 
@@ -28,6 +28,14 @@ class RulebookTest(unittest.TestCase):
             self.assertIn(rule['category'], CATEGORY_KEYS)
             for field in ('ka', 'req_ka'):
                 self.assertTrue(any('ა' <= c <= 'ჿ' for c in rule[field]), rule['id'])
+            self.assertTrue(rule['on'], rule['id'])
+            self.assertEqual(len(set(rule['on'])), len(rule['on']), rule['id'])
+            for discipline in rule['on']:
+                self.assertIn(discipline, SECTION_KEYS, rule['id'])
+
+    def test_every_section_has_rules_to_check(self):
+        for key in SECTION_KEYS:
+            self.assertTrue(rules_for(key), key)
 
 
 if __name__ == '__main__':

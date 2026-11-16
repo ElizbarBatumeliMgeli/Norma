@@ -225,7 +225,7 @@ class Project(unittest.TestCase):
         for name, data, discipline in files:
             sent = self.app.post(f'/api/reports/{report_id}/files', data=dict(file=(io.BytesIO(data), name), discipline=discipline), content_type='multipart/form-data')
             self.assertEqual(sent.status_code, 200)
-        with mock.patch.object(settings, 'read_key', lambda: None):
+        with mock.patch.object(settings, 'provider', lambda: None):
             self.assertEqual(self.app.post(f'/api/reports/{report_id}/check').status_code, 200)
             for thread in list(server.threading.enumerate()):
                 if thread is not server.threading.current_thread() and thread.daemon:

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Splash from "./components/Splash";
 import Home from "./components/Home";
 import Progress, { type Step } from "./components/Progress";
+import Questions from "./components/Questions";
 import ReportView from "./components/ReportView";
 import Assistant from "./components/Assistant";
 import Settings from "./components/Settings";
@@ -12,7 +13,9 @@ import {
   startSample,
   uploadProject,
   waitForEngine,
+  type Answers,
   type ApiError,
+  type Fact,
   type EngineStatus,
   type Lang,
   type Report,
@@ -39,6 +42,7 @@ function App() {
   const [stepNote, setStepNote] = useState("");
   const [error, setError] = useState<ApiError | null>(null);
   const [report, setReport] = useState<Report | null>(null);
+  const [asking, setAsking] = useState<{ questions: Fact[]; found: Fact[]; answer: (answers: Answers | null) => void } | null>(null);
 
   const [assistant, setAssistant] = useState(false);
   const [question, setQuestion] = useState<{ text: string } | null>(null);
@@ -81,7 +85,7 @@ function App() {
     storeLanguage(next);
   }
 
-  async function check(name: string, prepare: () => Promise<string>) {
+  async function check(name: string, prepare: () => Promise<string>, details = false) {
     setError(null);
     setFileName(name);
     setStep("upload");
@@ -89,15 +93,34 @@ function App() {
     setView("progress");
     try {
       const id = await prepare();
+      const ask = (questions: Fact[], found: Fact[]) =>
+        new Promise<Answers | null>((resolve) =>
+          setAsking({
+            questions,
+            found,
+            answer: (answers) => {
+              setAsking(null);
+              resolve(answers);
+            },
+          }),
+        );
       await runCheck(id, (stage, done, total) => {
         if (stage === "reading" || stage === "checking" || stage === "writing") setStep(stage);
-        setStepNote(stage === "reading" && total ? i18n.t("filesDone", done ?? 0, total) : "");
-      });
+        if (stage === "facts" || stage === "asking") setStep("facts");
+        setStepNote(
+          stage === "reading" && total
+            ? i18n.t("filesDone", done ?? 0, total)
+            : stage === "checking" && total && total > 1
+              ? i18n.t("stageCheckingSections", done ?? 0, total)
+              : "",
+        );
+      }, ask, details);
       setReport(await getReport(id));
       setView("report");
       refreshStatus();
     } catch (e) {
       const err = e as ApiError;
+      setAsking(null);
       setError(err && err.code ? err : { code: "check_failed" });
       setView("home");
     }
@@ -172,15 +195,19 @@ function App() {
                   status={status}
                   error={error}
                   onError={setError}
-                  onProject={(name: string, staged: Staged[]) =>
-                    check(name, () => uploadProject(name, staged, (done) => setStepNote(i18n.t("filesDone", done, staged.length))))
+                  onProject={(name: string, staged: Staged[], details: boolean) =>
+                    check(name, () => uploadProject(name, staged, (done) => setStepNote(i18n.t("filesDone", done, staged.length))), details)
                   }
                   onSample={() => check(SAMPLE_NAME, startSample)}
                   onOpen={open}
                 />
               </div>
             )}
-            {view === "progress" && <Progress fileName={fileName} current={step} note={stepNote} />}
+            {view === "progress" && (
+              <Progress fileName={fileName} current={step} note={stepNote}>
+                {asking && <Questions questions={asking.questions} found={asking.found} onAnswer={asking.answer} />}
+              </Progress>
+            )}
             {view === "report" && report && <ReportView report={report} onReset={reset} onAsk={ask} />}
           </main>
         )}

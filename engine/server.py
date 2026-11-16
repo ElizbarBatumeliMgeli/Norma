@@ -2,7 +2,8 @@
 
 Each check lives in its own folder under settings.REPORTS: the project's files until they are read,
 then all their sheets as one PDF, its text items, the report and the chat. Nothing leaves the machine
-except the requests to Gemini (the sheets during a check, and in chat when a report is attached).
+except the requests to the AI, Claude or Gemini (the sheets during a check, and in chat when a report is attached).
+Gemini runs with an API key or on Vertex AI in the user's own Google Cloud project.
 """
 import argparse
 from datetime import datetime
@@ -17,11 +18,13 @@ import uuid
 from flask import Flask, Response, abort, jsonify, request, send_file, stream_with_context
 
 import ai
+import claude_ai
+import facts
 import pdf_tools
 import project
 import regulation
 from report import assemble
-from rulebook import CATEGORY_KEYS, RULES
+from rulebook import CATEGORY_KEYS, RULES, SECTION_KEYS, rules_for
 import settings
 
 ALLOWED_ORIGINS = ('tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost',
@@ -33,7 +36,14 @@ MAX_UPLOAD = 200 * 1024 * 1024
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD
 stages = {}          # report id → dict(stage=…, error=…, detail=…) while a check runs
+answered = {}        # report id → an Event set when the designer answers the building data questions, or skips them
+ASK_TIMEOUT = 30 * 60   # seconds a check waits for answers before it goes on without them
 general_chat = dict(messages=[])    # the conversation when no report is open; gone when the app quits
+
+
+def assistant():
+    """The module that talks to the connected AI: Claude when it has a key, else Gemini."""
+    return claude_ai if settings.provider() == 'claude' else ai
 
 
 def fail(code, status=400, detail=''):
@@ -78,7 +88,9 @@ def health():
 def status():
     amendments = regulation.amendments()
     counts = {key: sum(r['category'] == key for r in RULES) for key in CATEGORY_KEYS}
-    return jsonify(ai=bool(settings.read_key()), rules=len(RULES), counts=counts, amendments=len(amendments), latest=amendments[-1])
+    keys = settings.connected()
+    return jsonify(ai=any(keys.values()), provider=settings.provider(), keys=keys, vertex=settings.vertex(), rules=len(RULES), counts=counts,
+                   sections=[dict(key=key, rules=len(rules_for(key))) for key in SECTION_KEYS], amendments=len(amendments), latest=amendments[-1])
 
 
 @app.post('/api/key')
@@ -87,12 +99,28 @@ def save_key():
     if not key:
         return fail('ai_key_empty')
     settings.save_key(key)
-    return jsonify(ok=True)
+    return jsonify(ok=True, provider=settings.provider_of(key))
+
+
+@app.post('/api/vertex')
+def connect_vertex():
+    """Uses Gemini on Vertex AI in this Google Cloud project, once a test request shows it answers there."""
+    body = request.get_json(silent=True) or {}
+    project, location = str(body.get('project', '')).strip(), str(body.get('location', '')).strip().lower() or settings.DEFAULT_LOCATION
+    if not re.fullmatch(r'[a-z][a-z0-9-]{4,28}[a-z0-9]', project) or not re.fullmatch(r'[a-z0-9-]{2,40}', location):
+        return fail('vertex_invalid')
+    try:
+        ai.check_vertex(project, location)
+    except ai.ReviewError as error:
+        return fail(error.code, 422, error.detail)
+    settings.save_vertex(project, location)
+    return jsonify(ok=True, provider='vertex')
 
 
 @app.delete('/api/key')
 def forget_key():
-    settings.forget_key()
+    which = request.args.get('provider')
+    settings.forget_key(which if which in settings.PROVIDERS else None)
     return jsonify(ok=True)
 
 
@@ -165,6 +193,30 @@ def has_cad(meta):
     return any(Path(f['name']).suffix.lower() in project.CAD_TYPES for f in meta.get('files', []))
 
 
+def building_data(target, meta, anchors, state):
+    """The facts the drawings state, read in a quick pass; None if the AI could not read them."""
+    state.update(stage='facts', done=None, total=None)
+    try:
+        return facts.found(assistant().ask(target, facts.request(target, meta['pages'], anchors, meta.get('measured'))))
+    except ai.ReviewError:
+        return None
+
+
+def ask_designer(report_id, state, known, meta):
+    """Asks for the facts the drawings did not give, and waits. Returns what was answered: maybe nothing."""
+    questions = facts.questions(known, state.get('details'), meta.get('measured'))
+    if not questions:
+        return {}
+    ready = answered[report_id] = threading.Event()
+    state.update(stage='asking', questions=questions,
+                 found=[facts.public(facts.BY_KEY[key], item['value'], item['where'], 'drawing') for key, item in known.items()])
+    ready.wait(ASK_TIMEOUT)
+    answered.pop(report_id, None)
+    state.pop('questions', None)
+    state.pop('found', None)
+    return state.pop('answers', None) or {}
+
+
 def run_check(report_id):
     """Runs in a thread. The app follows `stages` and reads the report when it is done."""
     target = settings.REPORTS / report_id
@@ -176,21 +228,31 @@ def run_check(report_id):
         write_json(target / 'anchors.json', anchors)
         if meta['demo']:
             time.sleep(SAMPLE_PAUSE)
-        state.update(stage='checking', done=None)
+        facts_note = None
+        if not meta['demo'] and settings.provider():
+            known = building_data(target, meta, anchors, state)
+            if known is not None:
+                meta['facts'] = facts.combine(known, ask_designer(report_id, state, known, meta))
+                write_json(target / 'meta.json', meta)
+                facts_note = facts.note(meta['facts'])
+        state.update(stage='checking', done=None, total=None)
         review, problem = None, None
         if meta['demo']:
             time.sleep(SAMPLE_PAUSE * 2)
             review = read_json(SAMPLE / 'review.json')
-        elif settings.read_key():
+        elif settings.provider():
             try:
-                review = ai.review(target, meta['pages'], anchors, meta.get('measured'))
+                review = assistant().review(target, meta['pages'], anchors, meta.get('measured'),
+                                            lambda done, total: state.update(done=done, total=total), facts_note)
             except ai.ReviewError as error:
                 # What was measured stands without the AI, so a busy model does not cost the whole check.
                 if not meta.get('measured'):
                     raise
                 problem = error.code
         state.update(stage='writing')
-        write_json(target / 'report.json', dict(assemble(review, anchors, meta['pages'], meta.get('measured'), meta['name']), **meta, ai_error=problem))
+        write_json(target / 'report.json', {**assemble(review, anchors, meta['pages'], meta.get('measured'), meta['name']), **meta, 'ai_error': problem,
+                                            'ai_provider': None if meta['demo'] or not review else settings.provider(),
+                                            'facts': facts.shown(meta.get('facts'))})
         if meta['demo']:
             time.sleep(SAMPLE_PAUSE / 2)
         state.update(stage='done')
@@ -204,10 +266,24 @@ def run_check(report_id):
 @app.post('/api/reports/<report_id>/check')
 def start_check(report_id):
     meta = read_json(folder(report_id) / 'meta.json')
-    if not meta['demo'] and not settings.read_key() and not has_cad(meta):
+    if not meta['demo'] and not settings.provider() and not has_cad(meta):
         return fail('ai_not_connected', 409)
-    stages[report_id] = dict(stage='reading')
+    details = bool((request.get_json(silent=True) or {}).get('details'))
+    stages[report_id] = dict(stage='reading', details=details)
     threading.Thread(target=run_check, args=(report_id,), daemon=True).start()
+    return jsonify(ok=True)
+
+
+@app.post('/api/reports/<report_id>/facts')
+def give_facts(report_id):
+    """The designer's answers to the building data questions, or a skip. The check goes on either way."""
+    folder(report_id)
+    state, ready = stages.get(report_id), answered.get(report_id)
+    if not state or state.get('stage') != 'asking' or ready is None:
+        return fail('not_asking', 409)
+    body = request.get_json(silent=True) or {}
+    state.update(answers={} if body.get('skip') else facts.answered(body.get('answers')), stage='facts')
+    ready.set()
     return jsonify(ok=True)
 
 
@@ -243,12 +319,12 @@ def page_image(report_id, number):
     return send_file(pdf_tools.render_page(target / 'drawing.pdf', number, target / 'pages' / f'{number}.png').resolve(), mimetype='image/png')
 
 
-def report_context(target):
-    """What chat is told about the open report: the drawing itself and the results."""
+def report_summary(target):
+    """What chat is told about the open report's results, besides the drawing itself."""
     report = read_json(target / 'report.json')
-    results = [{key: f[key] for key in ('rule', 'status', 'found', 'explanation_en', 'page')} for f in report['findings'] if f['status'] != 'not_applicable']
-    summary = json.dumps(dict(file=report['name'], building=report['building'], verdict=report['verdict'], results=results, measured=report.get('measured')), ensure_ascii=False)
-    return [ai.drawing_block(target), {'type': 'text', 'text': f'Report of the check:\n{summary}'}]
+    results = [{key: f.get(key) for key in ('rule', 'sections', 'status', 'found', 'explanation_en', 'page')} for f in report['findings'] if f['status'] != 'not_applicable']
+    return json.dumps(dict(file=report['name'], building=report['building'], verdict=report['verdict'], sections=report.get('sections'), results=results,
+                           measured=report.get('measured')), ensure_ascii=False)
 
 
 @app.get('/api/reports/<report_id>/chat')
@@ -266,15 +342,16 @@ def chat():
     log = target / 'chat.json' if target else None
     saved = read_json(log, dict(messages=[])) if log else general_chat
     checked = target and (target / 'report.json').exists()
-    context = (lambda: report_context(target)) if checked else list
+    helper = assistant()
+    context = (lambda: helper.chat_context(target, report_summary(target))) if checked else list
 
     def events():
         send = lambda event: f'data: {json.dumps(event, ensure_ascii=False)}\n\n'
-        if not settings.read_key():
+        if not settings.provider():
             yield send(dict(type='text', text=ai.offline_answer(question, lang, read_json(target / 'report.json') if checked else None)))
         else:
             answer = ''
-            for event in ai.chat_turn(question, context, saved):
+            for event in helper.chat_turn(question, context, saved):
                 answer += event.get('text', '')
                 yield send(event)
             saved['messages'] += [dict(role='user', text=question), dict(role='assistant', text=answer)]

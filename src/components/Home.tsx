@@ -7,6 +7,7 @@ export const CATEGORY_ICONS: Record<string, string> = {
   scope: "M5 20V6l7-3 7 3v14M5 20h14M9.5 9h1M13.5 9h1M9.5 13h1M13.5 13h1M10.5 20v-3h3v3",
   egress: "M4 21h4V4h9v17M13.5 12.5h.01M20 21h-3",
   fire_systems: "M12.6 3c.4 3-1 4.6-2.6 6.4-1.6 1.8-3.5 3.8-3.5 6.8a5.5 5.5 0 0 0 11 0c0-2.3-1-4-2.1-5.2.1 1.5-.5 2.6-1.5 3.1.4-3.4-.4-8-1.3-11.1z",
+  fire_access: "M3 17h2l1.5-5h7L16 17h5M6.5 12V8h5v4M16 17V9l3 3M7 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM17 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4z",
   fire_resistance: "M12 3l7 3v6c0 4.4-3 7.4-7 9-4-1.6-7-4.6-7-9V6zM9 12l2.2 2.2L15.5 10",
   accessibility: "M12 4.5h.01M6 8.5c4 1 8 1 12 0M12 9.5V14M12 14l-3 6M12 14l3 6",
   interior: "M4 4h16v16H4zM12 4v16M4 12h16",
@@ -24,6 +25,7 @@ const CATEGORY_NAMES: Record<string, { ka: string; en: string }> = {
   scope: { ka: "დანიშნულება და სიმაღლე", en: "Use & height" },
   egress: { ka: "გასასვლელი საშუალებები", en: "Means of egress" },
   fire_systems: { ka: "სახანძრო სისტემები", en: "Fire protection systems" },
+  fire_access: { ka: "სახანძრო მისასვლელი და ტერიტორია", en: "Fire access & site" },
   fire_resistance: { ka: "ცეცხლმედეგობა", en: "Fire resistance" },
   accessibility: { ka: "მისაწვდომობა", en: "Accessibility" },
   interior: { ka: "შიგა გარემო", en: "Interior environment" },
@@ -35,7 +37,7 @@ type Props = {
   status: EngineStatus | null;
   error: ApiError | null;
   onError: (error: ApiError | null) => void;
-  onProject: (name: string, staged: Staged[]) => void;
+  onProject: (name: string, staged: Staged[], details: boolean) => void;
   onSample: () => void;
   onOpen: (id: string) => void;
 };
@@ -48,6 +50,7 @@ export default function Home({ status, error, onError, onProject, onSample, onOp
   const [recent, setRecent] = useState<Recent[]>([]);
   const [staged, setStaged] = useState<Staged[]>([]);
   const [name, setName] = useState<string | null>(null);
+  const [details, setDetails] = useState(false);
   const other = lang === "ka" ? "en" : "ka";
   const counts = DISCIPLINES.map((d) => [d, staged.filter((s) => s.discipline === d).length] as const).filter(([, n]) => n);
 
@@ -201,6 +204,20 @@ export default function Home({ status, error, onError, onProject, onSample, onOp
           </ul>
           {status && !status.ai && <p className="staged-note">{t(staged.some((s) => isCad(s.file.name)) ? "noAiCad" : "noAiPdf")}</p>}
           <div className="staged-actions">
+            {status?.ai && (
+              <label className="check-option" title={t("askDetailsHint")}>
+                <input type="checkbox" checked={details} onChange={(e) => setDetails(e.currentTarget.checked)} />
+                <span className="check-box" aria-hidden="true">
+                  <svg viewBox="0 0 16 16">
+                    <path d="M4 8.5l2.6 2.5L12 5.5" />
+                  </svg>
+                </span>
+                <span className="check-text">
+                  {t("askDetails")}
+                  <span className="check-hint">{t("askDetailsHint")}</span>
+                </span>
+              </label>
+            )}
             <button
               type="button"
               className="btn btn-quiet"
@@ -211,7 +228,7 @@ export default function Home({ status, error, onError, onProject, onSample, onOp
             >
               {t("clearFiles")}
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => onProject((name ?? projectName(staged)).trim() || staged[0].file.name, staged)}>
+            <button type="button" className="btn btn-primary" onClick={() => onProject((name ?? projectName(staged)).trim() || staged[0].file.name, staged, details)}>
               {t("startCheck", staged.length)}
             </button>
           </div>

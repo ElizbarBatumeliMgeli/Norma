@@ -5,3 +5,4 @@ ezdxf
 numpy
 Pillow
 scipy
+anthropic

@@ -1,11 +1,12 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useI18n } from "../lib/i18n";
 
 export type StepState = "pending" | "active" | "done";
-export const STEPS = ["upload", "reading", "checking", "writing"] as const;
+export const STEPS = ["upload", "reading", "facts", "checking", "writing"] as const;
 export type Step = (typeof STEPS)[number];
 
-const LABELS: Record<Step, string> = { upload: "stageUpload", reading: "stageReading", checking: "stageChecking", writing: "stageWriting" };
+const LABELS: Record<Step, string> = { upload: "stageUpload", reading: "stageReading", facts: "stageFacts", checking: "stageChecking", writing: "stageWriting" };
+const NOTES: Partial<Record<Step, string>> = { facts: "stageFactsNote", checking: "stageCheckingNote" };
 const PINS = [
   [96, 74, 0.9, "fail"],
   [214, 120, 1.6, "missing"],
@@ -39,7 +40,8 @@ function Scene() {
   );
 }
 
-export default function Progress({ fileName, current, note }: { fileName: string; current: Step; note: string }) {
+/** The steps of a check. `children` (the building data questions) take the place of the picture while they are open. */
+export default function Progress({ fileName, current, note, children }: { fileName: string; current: Step; note: string; children?: ReactNode }) {
   const { t } = useI18n();
   const reached = STEPS.indexOf(current);
   return (
@@ -49,7 +51,7 @@ export default function Progress({ fileName, current, note }: { fileName: string
           {fileName}
         </h2>
       </header>
-      <Scene />
+      {children ?? <Scene />}
       <ol className="steps">
         {STEPS.map((step, i) => (
           <li key={step} className={`is-${i < reached ? "done" : i === reached ? "active" : "pending"}`}>
@@ -60,7 +62,7 @@ export default function Progress({ fileName, current, note }: { fileName: string
             </span>
             <span className="step-text">
               <span className="step-label">{t(LABELS[step])}</span>
-              <span className="step-note">{i !== reached ? " " : note || (step === "checking" ? t("stageCheckingNote") : " ")}</span>
+              <span className="step-note">{i !== reached ? " " : note || (NOTES[step] ? t(NOTES[step]!) : " ")}</span>
             </span>
           </li>
         ))}

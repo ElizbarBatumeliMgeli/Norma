@@ -58,6 +58,17 @@ def render_page(path, number, target, longest=2400):
     return target
 
 
+def subset(path, numbers, target):
+    """A PDF of the pages `numbers` (1-based, in order), made once: one discipline's sheets of a project."""
+    target = Path(target)
+    if not target.exists():
+        with open_pdf(path) as document, pymupdf.open() as part:
+            for number in numbers:
+                part.insert_pdf(document, from_page=number - 1, to_page=number - 1)
+            part.save(target, garbage=3, deflate=True)
+    return target
+
+
 def for_model(path, target, limit, first=()):
     """A PDF within `limit` bytes for the AI: the original if it fits, else a copy with smaller images, else a copy
     of page images. If even that is too large, the sheets in `first` come first and the rest are left blank, so page
